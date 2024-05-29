@@ -103,8 +103,11 @@ impl Display for RecordClass {
 struct Zone {}
 
 impl Zone {
+    /// Parse a Zone from an input in zone file format.
+    ///
+    /// The *zone file* format is defined in RFC 1035.
     fn from_str(input: &str) -> Self {
-        ZoneParser::from_str(input).parse().expect("todo")
+        ZoneParser::from_str(input).parse_zone().expect("todo")
     }
 }
 
@@ -127,9 +130,9 @@ impl<'a> ZoneParser<'a> {
         }
     }
 
-    fn parse(&mut self) -> Result<Zone> {
+    fn parse_zone(&mut self) -> Result<Zone> {
         while self.pos < self.input.len() {
-            while self.scan_whitespace() || self.scan_newline() {
+            while self.scan_whitespace() || self.scan_newline() || self.scan_comment() {
                 continue;
             }
 
@@ -182,7 +185,7 @@ impl<'a> ZoneParser<'a> {
 
     fn scan_whitespace(&mut self) -> bool {
         let mut len = 0;
-        while self.pos + len < self.input.len() {
+        while len < self.remainder().len() {
             match self.input.as_bytes()[self.pos + len] {
                 b' ' | b'\t' => len += 1,
                 _ => break,
@@ -195,8 +198,8 @@ impl<'a> ZoneParser<'a> {
 
     fn scan_newline(&mut self) -> bool {
         let mut len = 0;
-        while self.pos + len < self.input.len() {
-            match self.input.as_bytes()[self.pos + len] {
+        while len < self.remainder().len() {
+            match self.remainder().as_bytes()[len] {
                 b'\r' | b'\n' => len += 1,
                 _ => break,
             }
@@ -206,18 +209,37 @@ impl<'a> ZoneParser<'a> {
         len > 0
     }
 
+    fn scan_comment(&mut self) -> bool {
+        if !self.remainder().starts_with(";") {
+            return false;
+        }
+
+        let mut len = 1;
+        let mut chars = self.remainder()[len..].chars();
+        while let Some(char) = chars.next() {
+            match char {
+                '\r' | '\n' => break,
+                c @ _ => len += c.len_utf8(),
+            }
+        }
+
+        self.pos += len;
+        len > 0
+    }
+
     fn scan_domain(&mut self) -> Option<&'a str> {
         let mut len = 0;
-        let mut chars = self.input[self.pos..].chars();
+        let mut chars = self.remainder().chars();
         while let Some(char) = chars.next() {
             match char {
                 'a'..='z' | 'A'..='Z' | '.' => len += char.len_utf8(),
                 _ => break,
             }
         }
-        self.pos = self.pos + len;
         if len > 0 {
-            Some(&self.input[self.pos - len..self.pos])
+            let domain = &self.remainder()[..len];
+            self.pos = self.pos + len;
+            Some(&domain)
         } else {
             None
         }
@@ -225,19 +247,24 @@ impl<'a> ZoneParser<'a> {
 
     fn scan_num(&mut self) -> Option<u32> {
         let mut len = 0;
-        let mut chars = self.input[self.pos..].chars();
+        let mut chars = self.remainder().chars();
         while let Some(char) = chars.next() {
             match char {
                 '0'..='9' => len += char.len_utf8(),
                 _ => break,
             }
         }
-        self.pos = self.pos + len;
         if len > 0 {
-            Some(self.input[self.pos - len..self.pos].parse().unwrap())
+            let num = self.remainder()[..len].parse().unwrap();
+            self.pos = self.pos + len;
+            Some(num)
         } else {
             None
         }
+    }
+
+    fn remainder(&self) -> &'a str {
+        &self.input[self.pos..]
     }
 }
 
@@ -249,7 +276,7 @@ mod tests {
     fn parse_origin() {
         let input = "$ORIGIN hello.";
         let mut parser = ZoneParser::from_str(input);
-        parser.parse().unwrap();
+        parser.parse_zone().unwrap();
         assert_eq!(parser.origin, Some("hello."));
     }
 
@@ -257,7 +284,7 @@ mod tests {
     fn parse_ttl() {
         let input = "$TTL 60";
         let mut parser = ZoneParser::from_str(input);
-        parser.parse().unwrap();
+        parser.parse_zone().unwrap();
         assert_eq!(parser.ttl, Some(60));
     }
 
@@ -268,7 +295,7 @@ mod tests {
             $TTL 60
         ";
         let mut parser = ZoneParser::from_str(input);
-        parser.parse().unwrap();
+        parser.parse_zone().unwrap();
         assert_eq!(parser.origin, Some("hello."));
         assert_eq!(parser.ttl, Some(60));
     }
@@ -280,8 +307,16 @@ mod tests {
             $ORIGIN hello.
         ";
         let mut parser = ZoneParser::from_str(input);
-        parser.parse().unwrap();
+        parser.parse_zone().unwrap();
         assert_eq!(parser.origin, Some("hello."));
+        assert_eq!(parser.ttl, Some(60));
+    }
+
+    #[test]
+    fn parse_comment() {
+        let input = "$TTL 60 ; this is a comment";
+        let mut parser = ZoneParser::from_str(input);
+        parser.parse_zone().unwrap();
         assert_eq!(parser.ttl, Some(60));
     }
 }
