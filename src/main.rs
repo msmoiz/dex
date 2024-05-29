@@ -3,6 +3,8 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr},
 };
 
+use anyhow::{bail, Result};
+
 fn main() {
     let records = [
         Record {
@@ -92,5 +94,194 @@ impl Display for RecordClass {
         };
 
         write!(f, "{code}")
+    }
+}
+
+/// A subset of the DNS namespace.
+///
+/// This usually represents a single domain.
+struct Zone {}
+
+impl Zone {
+    fn from_str(input: &str) -> Self {
+        ZoneParser::from_str(input).parse().expect("todo")
+    }
+}
+
+struct ZoneParser<'a> {
+    input: &'a str,
+    pos: usize,
+    origin: Option<&'a str>,
+    owner: Option<String>,
+    ttl: Option<u32>,
+}
+
+impl<'a> ZoneParser<'a> {
+    fn from_str(input: &'a str) -> Self {
+        Self {
+            input,
+            pos: 0,
+            origin: None,
+            owner: None,
+            ttl: None,
+        }
+    }
+
+    fn parse(&mut self) -> Result<Zone> {
+        while self.pos < self.input.len() {
+            while self.scan_whitespace() || self.scan_newline() {
+                continue;
+            }
+
+            if let Some(origin) = self.parse_origin_dx()? {
+                self.origin = Some(origin);
+                continue;
+            }
+
+            if let Some(ttl) = self.parse_ttl_dx()? {
+                self.ttl = Some(ttl);
+                continue;
+            }
+        }
+
+        Ok(Zone {})
+    }
+
+    fn parse_origin_dx(&mut self) -> Result<Option<&'a str>> {
+        let backup = self.pos;
+
+        if !self.input[self.pos..].starts_with("$ORIGIN") {
+            self.pos = backup;
+            return Ok(None);
+        }
+
+        self.pos += 7;
+        self.scan_whitespace();
+        match self.scan_domain() {
+            Some(domain) => Ok(Some(domain)),
+            _ => bail!("missing domain for origin directive"),
+        }
+    }
+
+    fn parse_ttl_dx(&mut self) -> Result<Option<u32>> {
+        let backup = self.pos;
+
+        self.scan_whitespace();
+        if !self.input[self.pos..].starts_with("$TTL") {
+            self.pos = backup;
+            return Ok(None);
+        }
+
+        self.pos += 4;
+        self.scan_whitespace();
+        match self.scan_num() {
+            Some(ttl) => Ok(Some(ttl)),
+            _ => bail!("missing ttl for ttl directive"),
+        }
+    }
+
+    fn scan_whitespace(&mut self) -> bool {
+        let mut len = 0;
+        while self.pos + len < self.input.len() {
+            match self.input.as_bytes()[self.pos + len] {
+                b' ' | b'\t' => len += 1,
+                _ => break,
+            }
+        }
+
+        self.pos += len;
+        len > 0
+    }
+
+    fn scan_newline(&mut self) -> bool {
+        let mut len = 0;
+        while self.pos + len < self.input.len() {
+            match self.input.as_bytes()[self.pos + len] {
+                b'\r' | b'\n' => len += 1,
+                _ => break,
+            }
+        }
+
+        self.pos += len;
+        len > 0
+    }
+
+    fn scan_domain(&mut self) -> Option<&'a str> {
+        let mut len = 0;
+        let mut chars = self.input[self.pos..].chars();
+        while let Some(char) = chars.next() {
+            match char {
+                'a'..='z' | 'A'..='Z' | '.' => len += char.len_utf8(),
+                _ => break,
+            }
+        }
+        self.pos = self.pos + len;
+        if len > 0 {
+            Some(&self.input[self.pos - len..self.pos])
+        } else {
+            None
+        }
+    }
+
+    fn scan_num(&mut self) -> Option<u32> {
+        let mut len = 0;
+        let mut chars = self.input[self.pos..].chars();
+        while let Some(char) = chars.next() {
+            match char {
+                '0'..='9' => len += char.len_utf8(),
+                _ => break,
+            }
+        }
+        self.pos = self.pos + len;
+        if len > 0 {
+            Some(self.input[self.pos - len..self.pos].parse().unwrap())
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ZoneParser;
+
+    #[test]
+    fn parse_origin() {
+        let input = "$ORIGIN hello.";
+        let mut parser = ZoneParser::from_str(input);
+        parser.parse().unwrap();
+        assert_eq!(parser.origin, Some("hello."));
+    }
+
+    #[test]
+    fn parse_ttl() {
+        let input = "$TTL 60";
+        let mut parser = ZoneParser::from_str(input);
+        parser.parse().unwrap();
+        assert_eq!(parser.ttl, Some(60));
+    }
+
+    #[test]
+    fn parse_multi_dx() {
+        let input = "
+            $ORIGIN hello.
+            $TTL 60
+        ";
+        let mut parser = ZoneParser::from_str(input);
+        parser.parse().unwrap();
+        assert_eq!(parser.origin, Some("hello."));
+        assert_eq!(parser.ttl, Some(60));
+    }
+
+    #[test]
+    fn parse_multi_dx_reorder() {
+        let input = "
+            $TTL 60
+            $ORIGIN hello.
+        ";
+        let mut parser = ZoneParser::from_str(input);
+        parser.parse().unwrap();
+        assert_eq!(parser.origin, Some("hello."));
+        assert_eq!(parser.ttl, Some(60));
     }
 }
