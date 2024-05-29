@@ -1,6 +1,7 @@
 use std::{
     fmt::Display,
     net::{Ipv4Addr, Ipv6Addr},
+    str::FromStr,
 };
 
 use anyhow::{bail, Result};
@@ -27,9 +28,9 @@ fn main() {
 }
 
 /// A DNS resource record.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 struct Record {
-    /// The name of the node that the record pertains to.
+    /// The name of the domain that the record pertains to.
     name: String,
     /// The type of the record.
     kind: RecordKind,
@@ -39,13 +40,25 @@ struct Record {
     ttl: u32,
 }
 
+impl Record {
+    /// Creates a new Record.
+    fn new(name: String, class: RecordClass, ttl: u32, kind: RecordKind) -> Self {
+        Self {
+            name,
+            class,
+            ttl,
+            kind,
+        }
+    }
+}
+
 impl Display for Record {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {} {} {}", self.name, self.class, self.ttl, self.kind)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 enum RecordKind {
     /// IPv4 address record.
     A(Ipv4Addr),
@@ -74,7 +87,7 @@ impl Display for RecordKind {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq, Eq, Clone)]
 enum RecordClass {
     /// Internet.
     #[default]
@@ -100,7 +113,9 @@ impl Display for RecordClass {
 /// A subset of the DNS namespace.
 ///
 /// This usually represents a single domain.
-struct Zone {}
+struct Zone {
+    records: Vec<Record>,
+}
 
 impl Zone {
     /// Parse a Zone from an input in zone file format.
@@ -117,6 +132,7 @@ struct ZoneParser<'a> {
     origin: Option<&'a str>,
     owner: Option<String>,
     ttl: Option<u32>,
+    records: Vec<Record>,
 }
 
 impl<'a> ZoneParser<'a> {
@@ -127,6 +143,7 @@ impl<'a> ZoneParser<'a> {
             origin: None,
             owner: None,
             ttl: None,
+            records: vec![],
         }
     }
 
@@ -145,9 +162,16 @@ impl<'a> ZoneParser<'a> {
                 self.ttl = Some(ttl);
                 continue;
             }
+
+            if let Some(record) = self.parse_record()? {
+                self.owner = Some(record.name.clone());
+                self.records.push(record);
+            }
         }
 
-        Ok(Zone {})
+        Ok(Zone {
+            records: self.records.clone(),
+        })
     }
 
     fn parse_origin_dx(&mut self) -> Result<Option<&'a str>> {
@@ -181,6 +205,128 @@ impl<'a> ZoneParser<'a> {
             Some(ttl) => Ok(Some(ttl)),
             _ => bail!("missing ttl for ttl directive"),
         }
+    }
+
+    fn parse_record(&mut self) -> Result<Option<Record>> {
+        // 1. domain present
+        if let Some(domain) = self.scan_domain() {
+            self.scan_whitespace();
+
+            // 1.1. ttl present
+            if let Some(ttl) = self.scan_num() {
+                self.scan_whitespace();
+
+                // 1.1.1. class present
+                if let Some(class) = self.scan_class() {
+                    self.scan_whitespace();
+                    let kind = self.parse_record_kind()?;
+                    let record = Record::new(domain.into(), class, ttl, kind);
+                    return Ok(Some(record));
+                }
+
+                // 1.1.2. class missing
+                self.scan_whitespace();
+                let kind = self.parse_record_kind()?;
+                let class = RecordClass::In;
+                let record = Record::new(domain.into(), class, ttl, kind);
+                return Ok(Some(record));
+            }
+
+            // 1.2. class present
+            if let Some(class) = self.scan_class() {
+                self.scan_whitespace();
+
+                // 1.2.1 ttl present
+                if let Some(ttl) = self.scan_num() {
+                    self.scan_whitespace();
+                    let kind = self.parse_record_kind()?;
+                    let record = Record::new(domain.into(), class, ttl, kind);
+                    return Ok(Some(record));
+                }
+
+                // 1.2.2. ttl missing
+                self.scan_whitespace();
+                let kind = self.parse_record_kind()?;
+                let ttl = 60;
+                let record = Record::new(domain.into(), class, ttl, kind);
+                return Ok(Some(record));
+            }
+
+            // 1.3. ttl and class missing
+            let kind = self.parse_record_kind()?;
+            let class = RecordClass::In;
+            let ttl = 60;
+            let record = Record::new(domain.into(), class, ttl, kind);
+            return Ok(Some(record));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_record_kind(&mut self) -> Result<RecordKind> {
+        let Some(kind) = self.scan_alnum() else {
+            bail!("unexpected end of record; missing type code");
+        };
+
+        self.scan_whitespace();
+
+        match kind {
+            "A" => self.parse_a_data(),
+            "AAAA" => self.parse_aaaa_data(),
+            "MX" => self.parse_mx_data(),
+            "CNAME" => self.parse_cname_data(),
+            "TXT" => self.parse_txt_data(),
+            "NS" => self.parse_ns_data(),
+            k @ _ => bail!("unsupported record type {k}"),
+        }
+    }
+
+    fn parse_a_data(&mut self) -> Result<RecordKind> {
+        let Some(ip) = self.scan_domain() else {
+            bail!("missing ip address for A record");
+        };
+        let ip = Ipv4Addr::from_str(ip)?;
+        Ok(RecordKind::A(ip))
+    }
+
+    fn parse_aaaa_data(&mut self) -> Result<RecordKind> {
+        let Some(ip) = self.scan_ipv6() else {
+            bail!("missing ip address for AAAA record");
+        };
+        let ip = Ipv6Addr::from_str(ip)?;
+        Ok(RecordKind::Aaaa(ip))
+    }
+
+    fn parse_mx_data(&mut self) -> Result<RecordKind> {
+        let Some(priority) = self.scan_num() else {
+            bail!("missing priority for MX record");
+        };
+        self.scan_whitespace();
+        let Some(name) = self.scan_domain() else {
+            bail!("missing name for MX record");
+        };
+        Ok(RecordKind::Mx(priority as u16, name.into()))
+    }
+
+    fn parse_cname_data(&mut self) -> Result<RecordKind> {
+        let Some(name) = self.scan_domain() else {
+            bail!("missing name for CNAME record");
+        };
+        Ok(RecordKind::Cname(name.into()))
+    }
+
+    fn parse_txt_data(&mut self) -> Result<RecordKind> {
+        let Some(data) = self.scan_alnum() else {
+            bail!("missing data for TXT record");
+        };
+        Ok(RecordKind::Txt(data.into()))
+    }
+
+    fn parse_ns_data(&mut self) -> Result<RecordKind> {
+        let Some(name) = self.scan_domain() else {
+            bail!("missing name for NS record");
+        };
+        Ok(RecordKind::Ns(name.into()))
     }
 
     fn scan_whitespace(&mut self) -> bool {
@@ -232,7 +378,25 @@ impl<'a> ZoneParser<'a> {
         let mut chars = self.remainder().chars();
         while let Some(char) = chars.next() {
             match char {
-                'a'..='z' | 'A'..='Z' | '.' => len += char.len_utf8(),
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '.' => len += char.len_utf8(),
+                _ => break,
+            }
+        }
+        if len > 0 {
+            let domain = &self.remainder()[..len];
+            self.pos = self.pos + len;
+            Some(&domain)
+        } else {
+            None
+        }
+    }
+
+    fn scan_ipv6(&mut self) -> Option<&'a str> {
+        let mut len = 0;
+        let mut chars = self.remainder().chars();
+        while let Some(char) = chars.next() {
+            match char {
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | ':' => len += char.len_utf8(),
                 _ => break,
             }
         }
@@ -263,6 +427,40 @@ impl<'a> ZoneParser<'a> {
         }
     }
 
+    fn scan_class(&mut self) -> Option<RecordClass> {
+        let start = self.remainder().chars().take(2).collect::<String>();
+        let class = match start.as_ref() {
+            "IN" => Some(RecordClass::In),
+            "CH" => Some(RecordClass::Ch),
+            "HS" => Some(RecordClass::Hs),
+            _ => None,
+        };
+
+        if class.is_some() {
+            self.pos += 2;
+        }
+
+        class
+    }
+
+    fn scan_alnum(&mut self) -> Option<&'a str> {
+        let mut len = 0;
+        let mut chars = self.remainder().chars();
+        while let Some(char) = chars.next() {
+            match char {
+                'a'..='z' | 'A'..='Z' | '0'..='9' => len += char.len_utf8(),
+                _ => break,
+            }
+        }
+        if len > 0 {
+            let alnum = &self.remainder()[..len];
+            self.pos = self.pos + len;
+            Some(alnum)
+        } else {
+            None
+        }
+    }
+
     fn remainder(&self) -> &'a str {
         &self.input[self.pos..]
     }
@@ -270,7 +468,9 @@ impl<'a> ZoneParser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ZoneParser;
+    use std::net::Ipv4Addr;
+
+    use crate::{Record, RecordClass, RecordKind, ZoneParser};
 
     #[test]
     fn parse_origin() {
@@ -318,5 +518,189 @@ mod tests {
         let mut parser = ZoneParser::from_str(input);
         parser.parse_zone().unwrap();
         assert_eq!(parser.ttl, Some(60));
+    }
+
+    #[test]
+    fn parse_record_unsupported_type() {
+        let input = "example.com. 60 IN B";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone();
+        assert!(zone.is_err());
+    }
+
+    #[test]
+    fn parse_record_ttl_first() {
+        let input = "example.com. 60 IN A 0.0.0.0";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone().unwrap();
+        assert_eq!(
+            zone.records[0],
+            Record {
+                name: "example.com.".to_string(),
+                kind: RecordKind::A("0.0.0.0".parse().unwrap()),
+                class: RecordClass::In,
+                ttl: 60
+            }
+        );
+    }
+
+    #[test]
+    fn parse_record_ttl_first_class_missing() {
+        let input = "example.com. 60 A 0.0.0.0";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone().unwrap();
+        assert_eq!(
+            zone.records[0],
+            Record {
+                name: "example.com.".to_string(),
+                kind: RecordKind::A("0.0.0.0".parse().unwrap()),
+                class: RecordClass::In,
+                ttl: 60
+            }
+        );
+    }
+
+    #[test]
+    fn parse_record_class_first() {
+        let input = "example.com. IN 60 A 0.0.0.0";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone().unwrap();
+        assert_eq!(
+            zone.records[0],
+            Record {
+                name: "example.com.".to_string(),
+                kind: RecordKind::A("0.0.0.0".parse().unwrap()),
+                class: RecordClass::In,
+                ttl: 60
+            }
+        );
+    }
+
+    #[test]
+    fn parse_record_class_first_ttl_missing() {
+        let input = "example.com. IN A 0.0.0.0";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone().unwrap();
+        assert_eq!(
+            zone.records[0],
+            Record {
+                name: "example.com.".to_string(),
+                kind: RecordKind::A("0.0.0.0".parse().unwrap()),
+                class: RecordClass::In,
+                ttl: 60
+            }
+        );
+    }
+
+    #[test]
+    fn parse_record_ttl_class_both_missing() {
+        let input = "example.com. A 0.0.0.0";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone().unwrap();
+        assert_eq!(
+            zone.records[0],
+            Record {
+                name: "example.com.".to_string(),
+                kind: RecordKind::A("0.0.0.0".parse().unwrap()),
+                class: RecordClass::In,
+                ttl: 60
+            }
+        );
+    }
+
+    #[test]
+    fn parse_a_record() {
+        let input = "example.com. 60 IN A 0.0.0.0";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone().unwrap();
+        assert_eq!(
+            zone.records[0],
+            Record::new(
+                "example.com.".into(),
+                RecordClass::In,
+                60,
+                RecordKind::A(Ipv4Addr::new(0, 0, 0, 0)),
+            )
+        );
+    }
+
+    #[test]
+    fn parse_aaaa_record() {
+        let input = "example.com. 60 IN AAAA 2001:0db8:85a3:0000:0000:8a2e:0370:7334";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone().unwrap();
+        assert_eq!(
+            zone.records[0],
+            Record::new(
+                "example.com.".into(),
+                RecordClass::In,
+                60,
+                RecordKind::Aaaa("2001:0db8:85a3:0000:0000:8a2e:0370:7334".parse().unwrap()),
+            )
+        );
+    }
+
+    #[test]
+    fn parse_mx_record() {
+        let input = "example.com. 60 IN MX 10 mail.example.com.";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone().unwrap();
+        assert_eq!(
+            zone.records[0],
+            Record::new(
+                "example.com.".into(),
+                RecordClass::In,
+                60,
+                RecordKind::Mx(10, "mail.example.com.".into()),
+            )
+        );
+    }
+
+    #[test]
+    fn parse_cname_record() {
+        let input = "example.com. 60 IN CNAME example.org.";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone().unwrap();
+        assert_eq!(
+            zone.records[0],
+            Record::new(
+                "example.com.".into(),
+                RecordClass::In,
+                60,
+                RecordKind::Cname("example.org.".into()),
+            )
+        );
+    }
+
+    #[test]
+    fn parse_txt_record() {
+        let input = "example.com. 60 IN TXT hello";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone().unwrap();
+        assert_eq!(
+            zone.records[0],
+            Record::new(
+                "example.com.".into(),
+                RecordClass::In,
+                60,
+                RecordKind::Txt("hello".into()),
+            )
+        );
+    }
+
+    #[test]
+    fn parse_ns_record() {
+        let input = "example.com. 60 IN NS ns.example.com.";
+        let mut parser = ZoneParser::from_str(input);
+        let zone = parser.parse_zone().unwrap();
+        assert_eq!(
+            zone.records[0],
+            Record::new(
+                "example.com.".into(),
+                RecordClass::In,
+                60,
+                RecordKind::Ns("ns.example.com.".into()),
+            )
+        );
     }
 }
