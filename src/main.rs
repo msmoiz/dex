@@ -7,27 +7,19 @@ use anyhow::Result;
 use serde::Deserialize;
 
 fn main() {
-    let zone_file = r#"
-        [[records]]
-        name = "example.com."
-        class = "IN"
-        ttl = 60
-        type = "TXT"
-        content = "hello world!"
+    serve();
+}
 
-        [[records]]
-        name = "example.com."
-        class = "IN"
-        ttl = 86400
-        type = "MX"
-        priority = 10
-        host = "mail.example.com."
-    "#;
-
-    let zone = Zone::from_toml(&zone_file).unwrap();
-
-    for record in &zone.records {
-        println!("{record}")
+fn serve() {
+    println!("listening on port 5380");
+    let socket = std::net::UdpSocket::bind("0.0.0.0:5380").unwrap();
+    loop {
+        let mut buf = [0; 512];
+        let (_, addr) = socket.recv_from(&mut buf).unwrap();
+        println!("received connection from addr: {addr}");
+        let mut bytes = Bytes::from_buf(&buf);
+        let header = Header::from_bytes(&mut bytes);
+        println!("{header:?}");
     }
 }
 
@@ -196,6 +188,135 @@ impl Zone {
     fn from_toml(input: &str) -> Result<Self> {
         let zone = toml::from_str(input)?;
         Ok(zone)
+    }
+}
+
+struct Message {
+    header: Header,
+}
+
+#[derive(Debug)]
+struct Header {
+    id: u16,
+    is_response: bool,
+    op_code: u8,
+    is_authority: bool,
+    is_truncated: bool,
+    recursion_desired: bool,
+    recursion_available: bool,
+    resp_code: u8,
+    question_count: u16,
+    answer_count: u16,
+    authority_count: u16,
+    additional_count: u16,
+}
+
+impl Header {
+    fn from_bytes(bytes: &mut Bytes) -> Self {
+        let id = {
+            let bytez = bytes.read_exact(2).unwrap();
+            u16::from_be_bytes(bytez.try_into().unwrap())
+        };
+
+        let (is_response, op_code, is_authority, is_truncated, recursion_desired) = {
+            let byte = bytes.read().unwrap();
+            let is_response = ((byte >> 7) & 1) == 1;
+            let op_code = (byte & (0b1111 << 3)) >> 3;
+            let is_authority = ((byte >> 2) & 1) == 1;
+            let is_truncated = ((byte >> 1) & 1) == 1;
+            let recursion_desired = (byte & 1) == 1;
+            (
+                is_response,
+                op_code,
+                is_authority,
+                is_truncated,
+                recursion_desired,
+            )
+        };
+
+        let (recursion_available, resp_code) = {
+            let byte = bytes.read().unwrap();
+            let recursion_available = ((byte >> 7) & 1) == 1;
+            let resp_code = byte & 0b1111;
+            (recursion_available, resp_code)
+        };
+
+        let question_count = {
+            let bytez = bytes.read_exact(2).unwrap();
+            u16::from_be_bytes(bytez.try_into().unwrap())
+        };
+
+        let answer_count = {
+            let bytez = bytes.read_exact(2).unwrap();
+            u16::from_be_bytes(bytez.try_into().unwrap())
+        };
+
+        let authority_count = {
+            let bytez = bytes.read_exact(2).unwrap();
+            u16::from_be_bytes(bytez.try_into().unwrap())
+        };
+
+        let additional_count = {
+            let bytez = bytes.read_exact(2).unwrap();
+            u16::from_be_bytes(bytez.try_into().unwrap())
+        };
+
+        Self {
+            id,
+            is_response,
+            op_code,
+            is_authority,
+            is_truncated,
+            recursion_desired,
+            recursion_available,
+            resp_code,
+            question_count,
+            answer_count,
+            authority_count,
+            additional_count,
+        }
+    }
+}
+
+/// An iterator over a byte buffer.
+struct Bytes<'a> {
+    buf: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Bytes<'a> {
+    /// Creates a new Bytes iterator.
+    fn from_buf(buf: &'a [u8]) -> Self {
+        Self { buf, pos: 0 }
+    }
+
+    /// Returns a slice that represents the unread bytes.
+    fn remainder(&self) -> &[u8] {
+        &self.buf[self.pos..]
+    }
+
+    /// Reads the next byte from the buffer.
+    ///
+    /// Returns None if the end of the buffer has been reached.
+    fn read(&mut self) -> Option<u8> {
+        if self.remainder().len() == 0 {
+            return None;
+        }
+        let byte = self.remainder()[0];
+        self.pos += 1;
+        Some(byte)
+    }
+
+    /// Reads the next n bytes from the buffer.
+    ///
+    /// Returns None if the end of the buffer has been reached.
+    fn read_exact(&mut self, n: usize) -> Option<Vec<u8>> {
+        if self.remainder().len() < n {
+            return None;
+        }
+        let bytes: Vec<_> = self.remainder()[..n].iter().map(|b| b.to_owned()).collect();
+        self.pos += n;
+        Some(bytes)
     }
 }
 
