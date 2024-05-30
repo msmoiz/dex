@@ -20,6 +20,10 @@ fn serve() {
         let mut bytes = Bytes::from_buf(&buf);
         let header = Header::from_bytes(&mut bytes);
         println!("{header:?}");
+        for _ in 0..header.question_count {
+            let question = Question::from_bytes(&mut bytes);
+            println!("{question:?}");
+        }
     }
 }
 
@@ -193,8 +197,10 @@ impl Zone {
 
 struct Message {
     header: Header,
+    questions: Vec<Question>,
 }
 
+/// Message header.
 #[derive(Debug)]
 struct Header {
     id: u16,
@@ -212,6 +218,7 @@ struct Header {
 }
 
 impl Header {
+    /// Creates a Header from a byte stream.
     fn from_bytes(bytes: &mut Bytes) -> Self {
         let id = {
             let bytez = bytes.read_exact(2).unwrap();
@@ -274,6 +281,49 @@ impl Header {
             answer_count,
             authority_count,
             additional_count,
+        }
+    }
+}
+
+/// A DNS question.
+#[derive(Debug)]
+struct Question {
+    name: String,
+    q_type: u16,
+    q_class: u16,
+}
+
+impl Question {
+    /// Creates a Question from a byte stream.
+    fn from_bytes(bytes: &mut Bytes) -> Self {
+        let mut labels = vec![];
+
+        loop {
+            let len = bytes.read().unwrap();
+            if len == 0 {
+                break;
+            }
+            let bytez = bytes.read_exact(len as usize).unwrap();
+            let label = String::from_utf8(bytez).unwrap();
+            labels.push(label);
+        }
+
+        let name = labels.join(".");
+
+        let q_type = {
+            let bytez = bytes.read_exact(2).unwrap();
+            u16::from_be_bytes(bytez.try_into().unwrap())
+        };
+
+        let q_class = {
+            let bytez = bytes.read_exact(2).unwrap();
+            u16::from_be_bytes(bytez.try_into().unwrap())
+        };
+
+        Self {
+            name,
+            q_type,
+            q_class,
         }
     }
 }
