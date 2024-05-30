@@ -34,28 +34,28 @@ enum Record {
     /// IPv4 address record.
     A {
         name: String,
-        class: RecordClass,
+        class: Class,
         ttl: u32,
         addr: Ipv4Addr,
     },
     /// IPv6 address record.
     Aaaa {
         name: String,
-        class: RecordClass,
+        class: Class,
         ttl: u32,
         addr: Ipv6Addr,
     },
     /// Canonical name record.
     Cname {
         name: String,
-        class: RecordClass,
+        class: Class,
         ttl: u32,
         host: String,
     },
     /// Mail exchange record.
     Mx {
         name: String,
-        class: RecordClass,
+        class: Class,
         ttl: u32,
         priority: u16,
         host: String,
@@ -63,20 +63,57 @@ enum Record {
     /// Name server record.
     Ns {
         name: String,
-        class: RecordClass,
+        class: Class,
         ttl: u32,
         host: String,
     },
     /// Text record.
     Txt {
         name: String,
-        class: RecordClass,
+        class: Class,
         ttl: u32,
         content: String,
     },
 }
 
 impl Record {
+    /// Creatse a Record from a byte stream.
+    fn from_bytes(bytes: &mut Bytes) -> Self {
+        let mut labels = vec![];
+
+        loop {
+            let len = bytes.read().unwrap();
+            if len == 0 {
+                break;
+            }
+            let bytez = bytes.read_exact(len as usize).unwrap();
+            let label = String::from_utf8(bytez).unwrap();
+            labels.push(label);
+        }
+
+        let name = labels.join(".");
+
+        let r_type = bytes.read_u16().unwrap();
+        let r_class = bytes.read_u16().unwrap();
+        let ttl = bytes.read_u32().unwrap();
+        let _rd_len = bytes.read_u16().unwrap();
+
+        // @todo: support all types
+        match r_type {
+            1 => {
+                let addr = bytes.read_u32().unwrap().into();
+
+                Self::A {
+                    name,
+                    class: r_class.into(),
+                    ttl,
+                    addr,
+                }
+            }
+            _ => todo!(),
+        }
+    }
+
     /// Returns the name of the record.
     fn name(&self) -> &str {
         match self {
@@ -90,7 +127,7 @@ impl Record {
     }
 
     /// Returns the class of the record.
-    fn class(&self) -> RecordClass {
+    fn class(&self) -> Class {
         match self {
             Record::A { class, .. } => class,
             Record::Aaaa { class, .. } => class,
@@ -129,27 +166,43 @@ impl Display for Record {
     }
 }
 
+/// DNS record class.
 #[derive(Default, Debug, PartialEq, Eq, Clone, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
-enum RecordClass {
+enum Class {
     /// Internet.
     #[default]
     In,
+    /// CS Net.
+    Cs,
     /// Chaos.
     Ch,
     /// Hesiod.
     Hs,
 }
 
-impl Display for RecordClass {
+impl Display for Class {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let code = match self {
-            RecordClass::In => "IN",
-            RecordClass::Ch => "CH",
-            RecordClass::Hs => "HS",
+            Class::In => "IN",
+            Class::Cs => "CS",
+            Class::Ch => "CH",
+            Class::Hs => "HS",
         };
 
         write!(f, "{code}")
+    }
+}
+
+impl From<u16> for Class {
+    fn from(value: u16) -> Self {
+        match value {
+            1 => Class::In,
+            2 => Class::Cs,
+            3 => Class::Ch,
+            4 => Class::Hs,
+            _ => panic!("unsupported class: {value}"),
+        }
     }
 }
 
@@ -220,10 +273,7 @@ struct Header {
 impl Header {
     /// Creates a Header from a byte stream.
     fn from_bytes(bytes: &mut Bytes) -> Self {
-        let id = {
-            let bytez = bytes.read_exact(2).unwrap();
-            u16::from_be_bytes(bytez.try_into().unwrap())
-        };
+        let id = bytes.read_u16().unwrap();
 
         let (is_response, op_code, is_authority, is_truncated, recursion_desired) = {
             let byte = bytes.read().unwrap();
@@ -248,25 +298,10 @@ impl Header {
             (recursion_available, resp_code)
         };
 
-        let question_count = {
-            let bytez = bytes.read_exact(2).unwrap();
-            u16::from_be_bytes(bytez.try_into().unwrap())
-        };
-
-        let answer_count = {
-            let bytez = bytes.read_exact(2).unwrap();
-            u16::from_be_bytes(bytez.try_into().unwrap())
-        };
-
-        let authority_count = {
-            let bytez = bytes.read_exact(2).unwrap();
-            u16::from_be_bytes(bytez.try_into().unwrap())
-        };
-
-        let additional_count = {
-            let bytez = bytes.read_exact(2).unwrap();
-            u16::from_be_bytes(bytez.try_into().unwrap())
-        };
+        let question_count = bytes.read_u16().unwrap();
+        let answer_count = bytes.read_u16().unwrap();
+        let authority_count = bytes.read_u16().unwrap();
+        let additional_count = bytes.read_u16().unwrap();
 
         Self {
             id,
@@ -310,15 +345,8 @@ impl Question {
 
         let name = labels.join(".");
 
-        let q_type = {
-            let bytez = bytes.read_exact(2).unwrap();
-            u16::from_be_bytes(bytez.try_into().unwrap())
-        };
-
-        let q_class = {
-            let bytez = bytes.read_exact(2).unwrap();
-            u16::from_be_bytes(bytez.try_into().unwrap())
-        };
+        let q_type = bytes.read_u16().unwrap();
+        let q_class = bytes.read_u16().unwrap();
 
         Self {
             name,
@@ -367,6 +395,22 @@ impl<'a> Bytes<'a> {
         let bytes: Vec<_> = self.remainder()[..n].iter().map(|b| b.to_owned()).collect();
         self.pos += n;
         Some(bytes)
+    }
+
+    /// Reads a u16 from the buffer.
+    ///
+    /// Returns None if the end of the buffer has been reached.
+    fn read_u16(&mut self) -> Option<u16> {
+        self.read_exact(2)
+            .map(|bytes| u16::from_be_bytes(bytes.try_into().unwrap()))
+    }
+
+    /// Reads a u32 from the buffer.
+    ///
+    /// Returns None if the end of the buffer has been reached.
+    fn read_u32(&mut self) -> Option<u32> {
+        self.read_exact(4)
+            .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()))
     }
 }
 
