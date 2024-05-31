@@ -18,12 +18,8 @@ fn serve() {
         let (_, addr) = socket.recv_from(&mut buf).unwrap();
         println!("received connection from addr: {addr}");
         let mut bytes = Bytes::from_buf(&buf);
-        let header = Header::from_bytes(&mut bytes);
-        println!("{header:?}");
-        for _ in 0..header.question_count {
-            let question = Question::from_bytes(&mut bytes);
-            println!("{question:?}");
-        }
+        let message = Message::from_bytes(&mut bytes);
+        println!("{message:?}");
     }
 }
 
@@ -248,9 +244,45 @@ impl Zone {
     }
 }
 
+/// A DNS message.
+#[derive(Debug)]
 struct Message {
     header: Header,
     questions: Vec<Question>,
+    answer_records: Vec<Record>,
+    authority_records: Vec<Record>,
+    additional_records: Vec<Record>,
+}
+
+impl Message {
+    /// Creates a Message from a byte stream.
+    fn from_bytes(bytes: &mut Bytes) -> Self {
+        let header = Header::from_bytes(bytes);
+
+        let questions: Vec<_> = (0..header.question_count)
+            .map(|_| Question::from_bytes(bytes))
+            .collect();
+
+        let answer_records: Vec<_> = (0..header.answer_count)
+            .map(|_| Record::from_bytes(bytes))
+            .collect();
+
+        let authority_records: Vec<_> = (0..header.authority_count)
+            .map(|_| Record::from_bytes(bytes))
+            .collect();
+
+        let additional_records: Vec<_> = (0..header.additional_count)
+            .map(|_| Record::from_bytes(bytes))
+            .collect();
+
+        Self {
+            header,
+            questions,
+            answer_records,
+            authority_records,
+            additional_records,
+        }
+    }
 }
 
 /// Message header.
