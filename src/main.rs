@@ -38,12 +38,12 @@ fn serve() {
         {
             Some(record) => {
                 response.header.is_authority = true;
-                response.header.resp_code = 0;
+                response.header.resp_code = ResponseCode::Success;
                 response.header.answer_count = 1;
                 response.answer_records.push(record.clone());
             }
             None => {
-                response.header.resp_code = 3;
+                response.header.resp_code = ResponseCode::NameError;
             }
         }
 
@@ -504,6 +504,55 @@ impl From<OperationCode> for u8 {
     }
 }
 
+/// A DNS response code.
+#[derive(Debug, Clone)]
+enum ResponseCode {
+    /// No error condition.
+    Success,
+    /// The name server was unable to interpret the query.
+    FormatError,
+    /// The name server was unable to process the query due to a problem with
+    /// the name server.
+    ServerFailure,
+    /// The domain name referenced in the query does not exist.
+    NameError,
+    /// The name server does not support the request kind of query.
+    NotImplemented,
+    /// The name server refuses to perform the specified operation for policy reasons.
+    Refused,
+}
+
+impl From<u8> for ResponseCode {
+    fn from(value: u8) -> Self {
+        use ResponseCode::*;
+
+        match value {
+            0 => Success,
+            1 => FormatError,
+            2 => ServerFailure,
+            3 => NameError,
+            4 => NotImplemented,
+            5 => Refused,
+            _ => panic!("unsupported response code: {value}"),
+        }
+    }
+}
+
+impl From<ResponseCode> for u8 {
+    fn from(value: ResponseCode) -> Self {
+        use ResponseCode::*;
+
+        match value {
+            Success => 0,
+            FormatError => 1,
+            ServerFailure => 2,
+            NameError => 3,
+            NotImplemented => 4,
+            Refused => 5,
+        }
+    }
+}
+
 /// Message header.
 #[derive(Debug)]
 struct Header {
@@ -514,7 +563,7 @@ struct Header {
     is_truncated: bool,
     recursion_desired: bool,
     recursion_available: bool,
-    resp_code: u8,
+    resp_code: ResponseCode,
     question_count: u16,
     answer_count: u16,
     authority_count: u16,
@@ -546,7 +595,7 @@ impl Header {
             let byte = bytes.read().unwrap();
             let recursion_available = ((byte >> 7) & 1) == 1;
             let resp_code = byte & 0b1111;
-            (recursion_available, resp_code)
+            (recursion_available, resp_code.into())
         };
 
         let question_count = bytes.read_u16().unwrap();
@@ -590,7 +639,7 @@ impl Header {
         let codes2 = {
             let mut byte = 0;
             byte |= (self.recursion_available as u8) << 7;
-            byte |= self.resp_code as u8;
+            byte |= u8::from(self.resp_code.clone());
             byte
         };
         bytes.push(codes2);
