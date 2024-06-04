@@ -468,12 +468,48 @@ impl Message {
     }
 }
 
+/// A DNS operation code.
+#[derive(Debug, Clone)]
+enum OperationCode {
+    /// A standard query.
+    Query,
+    /// An inverse query.
+    InverseQuery,
+    /// A server status request.
+    Status,
+}
+
+impl From<u8> for OperationCode {
+    fn from(value: u8) -> Self {
+        use OperationCode::*;
+
+        match value {
+            0 => Query,
+            1 => InverseQuery,
+            2 => Status,
+            _ => panic!("unsupported operation code: {value}"),
+        }
+    }
+}
+
+impl From<OperationCode> for u8 {
+    fn from(value: OperationCode) -> Self {
+        use OperationCode::*;
+
+        match value {
+            Query => 0,
+            InverseQuery => 1,
+            Status => 2,
+        }
+    }
+}
+
 /// Message header.
 #[derive(Debug)]
 struct Header {
     id: u16,
     is_response: bool,
-    op_code: u8,
+    op_code: OperationCode,
     is_authority: bool,
     is_truncated: bool,
     recursion_desired: bool,
@@ -499,7 +535,7 @@ impl Header {
             let recursion_desired = (byte & 1) == 1;
             (
                 is_response,
-                op_code,
+                op_code.into(),
                 is_authority,
                 is_truncated,
                 recursion_desired,
@@ -543,7 +579,7 @@ impl Header {
         let codes1 = {
             let mut byte = 0000_0000;
             byte |= (self.is_response as u8) << 7;
-            byte |= self.op_code << 3;
+            byte |= u8::from(self.op_code.clone()) << 3;
             byte |= (self.is_authority as u8) << 2;
             byte |= (self.is_truncated as u8) << 1;
             byte |= (self.recursion_desired as u8) << 0;
