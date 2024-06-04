@@ -236,12 +236,99 @@ enum Record {
         ttl: u32,
         host: Name,
     },
+    /// Mail destination record.
+    Md {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        host: Name,
+    },
+    /// Mail forwarded record.
+    Mf {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        host: Name,
+    },
     /// Canonical name record.
     Cname {
         name: Name,
         class: Class,
         ttl: u32,
         host: Name,
+    },
+    /// Statement of authority record.
+    Soa {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        origin: Name,
+        mailbox: Name,
+        version: u32,
+        refresh: u32,
+        retry: u32,
+        expire: u32,
+        minimum: u32,
+    },
+    /// Mailbox domain record.
+    Mb {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        host: Name,
+    },
+    /// Mail group record.
+    Mg {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        host: Name,
+    },
+    /// Mail rename record.
+    Mr {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        host: Name,
+    },
+    /// Null record.
+    Null {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        data: Vec<u8>,
+    },
+    /// Well known service record.
+    Wks {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        addr: Ipv4Addr,
+        protocol: u8,
+        data: Vec<u8>,
+    },
+    /// Domain name pointer record.
+    Ptr {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        host: Name,
+    },
+    /// Host information record.
+    Hinfo {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        cpu: String,
+        os: String,
+    },
+    /// Mailbox information record.
+    Minfo {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        r_mailbox: Name,
+        e_mailbox: Name,
     },
     /// Mail exchange record.
     Mx {
@@ -274,9 +361,8 @@ impl Record {
         let r_type = bytes.read_u16().unwrap();
         let class = bytes.read_u16().unwrap().into();
         let ttl = bytes.read_u32().unwrap();
-        let _rd_len = bytes.read_u16().unwrap();
+        let rd_len = bytes.read_u16().unwrap();
 
-        // @todo: support all types
         match r_type {
             1 => {
                 let addr = bytes.read_u32().unwrap().into();
@@ -298,7 +384,206 @@ impl Record {
                     host,
                 }
             }
-            _ => todo!(),
+            3 => {
+                let host = Name::from_bytes(bytes);
+
+                Self::Md {
+                    name,
+                    class,
+                    ttl,
+                    host,
+                }
+            }
+            4 => {
+                let host = Name::from_bytes(bytes);
+
+                Self::Mf {
+                    name,
+                    class,
+                    ttl,
+                    host,
+                }
+            }
+            5 => {
+                let host = Name::from_bytes(bytes);
+
+                Self::Cname {
+                    name,
+                    class,
+                    ttl,
+                    host,
+                }
+            }
+            6 => {
+                let origin = Name::from_bytes(bytes);
+                let mailbox = Name::from_bytes(bytes);
+                let version = bytes.read_u32().unwrap();
+                let refresh = bytes.read_u32().unwrap();
+                let retry = bytes.read_u32().unwrap();
+                let expire = bytes.read_u32().unwrap();
+                let minimum = bytes.read_u32().unwrap();
+
+                Self::Soa {
+                    name,
+                    class,
+                    ttl,
+                    origin,
+                    mailbox,
+                    version,
+                    refresh,
+                    retry,
+                    expire,
+                    minimum,
+                }
+            }
+            7 => {
+                let host = Name::from_bytes(bytes);
+
+                Self::Mb {
+                    name,
+                    class,
+                    ttl,
+                    host,
+                }
+            }
+            8 => {
+                let host = Name::from_bytes(bytes);
+
+                Self::Mg {
+                    name,
+                    class,
+                    ttl,
+                    host,
+                }
+            }
+            9 => {
+                let host = Name::from_bytes(bytes);
+
+                Self::Mr {
+                    name,
+                    class,
+                    ttl,
+                    host,
+                }
+            }
+            10 => {
+                let data = bytes.read_exact(rd_len as usize).unwrap();
+
+                Self::Null {
+                    name,
+                    class,
+                    ttl,
+                    data,
+                }
+            }
+            11 => {
+                let addr = Ipv4Addr::from(bytes.read_u32().unwrap());
+                let protocol = bytes.read().unwrap();
+                let data = {
+                    let len = rd_len as usize - 5;
+                    let bytez = bytes.read_exact(len).unwrap();
+                    bytez
+                };
+
+                Self::Wks {
+                    name,
+                    class,
+                    ttl,
+                    addr,
+                    protocol,
+                    data,
+                }
+            }
+            12 => {
+                let host = Name::from_bytes(bytes);
+
+                Self::Ptr {
+                    name,
+                    class,
+                    ttl,
+                    host,
+                }
+            }
+            13 => {
+                let cpu = {
+                    let len = bytes.read().unwrap();
+                    let bytez = bytes.read_exact(len as usize).unwrap();
+                    String::from_utf8(bytez).unwrap()
+                };
+
+                let os = {
+                    let len = bytes.read().unwrap();
+                    let bytez = bytes.read_exact(len as usize).unwrap();
+                    String::from_utf8(bytez).unwrap()
+                };
+
+                Self::Hinfo {
+                    name,
+                    class,
+                    ttl,
+                    cpu,
+                    os,
+                }
+            }
+            14 => {
+                let r_mailbox = Name::from_bytes(bytes);
+                let e_mailbox = Name::from_bytes(bytes);
+
+                Self::Minfo {
+                    name,
+                    class,
+                    ttl,
+                    r_mailbox,
+                    e_mailbox,
+                }
+            }
+            15 => {
+                let priority = bytes.read_u16().unwrap();
+                let host = Name::from_bytes(bytes);
+
+                Self::Mx {
+                    name,
+                    class,
+                    ttl,
+                    priority,
+                    host,
+                }
+            }
+            16 => {
+                let content = {
+                    let mut buf = vec![];
+                    let mut read = 0;
+                    while read < rd_len {
+                        let len = bytes.read().unwrap();
+                        let bytez = bytes.read_exact(len as usize).unwrap();
+                        buf.extend(bytez);
+                        read += (len as u16) + 1;
+                    }
+                    String::from_utf8(buf).unwrap()
+                };
+
+                Self::Txt {
+                    name,
+                    class,
+                    ttl,
+                    content,
+                }
+            }
+            28 => {
+                let addr = {
+                    let bytez = bytes.read_exact(16).unwrap();
+                    let bytez: [u8; 16] = bytez.try_into().unwrap();
+                    Ipv6Addr::from(bytez)
+                };
+
+                Self::Aaaa {
+                    name,
+                    class,
+                    ttl,
+                    addr,
+                }
+            }
+            _ => panic!("unsupported record type: {r_type}"),
         }
     }
 
@@ -307,7 +592,18 @@ impl Record {
         match self {
             Record::A { name, .. } => name,
             Record::Ns { name, .. } => name,
+            Record::Md { name, .. } => name,
+            Record::Mf { name, .. } => name,
             Record::Cname { name, .. } => name,
+            Record::Soa { name, .. } => name,
+            Record::Mb { name, .. } => name,
+            Record::Mg { name, .. } => name,
+            Record::Mr { name, .. } => name,
+            Record::Null { name, .. } => name,
+            Record::Wks { name, .. } => name,
+            Record::Ptr { name, .. } => name,
+            Record::Hinfo { name, .. } => name,
+            Record::Minfo { name, .. } => name,
             Record::Mx { name, .. } => name,
             Record::Txt { name, .. } => name,
             Record::Aaaa { name, .. } => name,
@@ -319,7 +615,18 @@ impl Record {
         match self {
             Record::A { class, .. } => class,
             Record::Ns { class, .. } => class,
+            Record::Md { class, .. } => class,
+            Record::Mf { class, .. } => class,
             Record::Cname { class, .. } => class,
+            Record::Soa { class, .. } => class,
+            Record::Mb { class, .. } => class,
+            Record::Mg { class, .. } => class,
+            Record::Mr { class, .. } => class,
+            Record::Null { class, .. } => class,
+            Record::Wks { class, .. } => class,
+            Record::Ptr { class, .. } => class,
+            Record::Hinfo { class, .. } => class,
+            Record::Minfo { class, .. } => class,
             Record::Mx { class, .. } => class,
             Record::Txt { class, .. } => class,
             Record::Aaaa { class, .. } => class,
@@ -332,7 +639,18 @@ impl Record {
         *match self {
             Record::A { ttl, .. } => ttl,
             Record::Ns { ttl, .. } => ttl,
+            Record::Md { ttl, .. } => ttl,
+            Record::Mf { ttl, .. } => ttl,
             Record::Cname { ttl, .. } => ttl,
+            Record::Soa { ttl, .. } => ttl,
+            Record::Mb { ttl, .. } => ttl,
+            Record::Mg { ttl, .. } => ttl,
+            Record::Mr { ttl, .. } => ttl,
+            Record::Null { ttl, .. } => ttl,
+            Record::Wks { ttl, .. } => ttl,
+            Record::Ptr { ttl, .. } => ttl,
+            Record::Hinfo { ttl, .. } => ttl,
+            Record::Minfo { ttl, .. } => ttl,
             Record::Mx { ttl, .. } => ttl,
             Record::Txt { ttl, .. } => ttl,
             Record::Aaaa { ttl, .. } => ttl,
@@ -344,7 +662,18 @@ impl Record {
         match self {
             Record::A { .. } => 1,
             Record::Ns { .. } => 2,
+            Record::Md { .. } => 3,
+            Record::Mf { .. } => 4,
             Record::Cname { .. } => 5,
+            Record::Soa { .. } => 6,
+            Record::Mb { .. } => 7,
+            Record::Mg { .. } => 8,
+            Record::Mr { .. } => 9,
+            Record::Null { .. } => 10,
+            Record::Wks { .. } => 11,
+            Record::Ptr { .. } => 12,
+            Record::Hinfo { .. } => 13,
+            Record::Minfo { .. } => 14,
             Record::Mx { .. } => 15,
             Record::Txt { .. } => 16,
             Record::Aaaa { .. } => 28,
@@ -360,7 +689,6 @@ impl Record {
         bytes.extend(u16::from(self.class()).to_be_bytes());
         bytes.extend(self.ttl().to_be_bytes());
 
-        // @todo: support all types
         match self {
             Record::A { addr, .. } => {
                 bytes.extend((4 as u16).to_be_bytes());
@@ -371,7 +699,122 @@ impl Record {
                 bytes.extend((host.len() as u16).to_be_bytes());
                 bytes.extend(host);
             }
-            _ => unimplemented!(),
+            Record::Md { host, .. } => {
+                let host = host.to_bytes();
+                bytes.extend((host.len() as u16).to_be_bytes());
+                bytes.extend(host);
+            }
+            Record::Mf { host, .. } => {
+                let host = host.to_bytes();
+                bytes.extend((host.len() as u16).to_be_bytes());
+                bytes.extend(host);
+            }
+            Record::Cname { host, .. } => {
+                let host = host.to_bytes();
+                bytes.extend((host.len() as u16).to_be_bytes());
+                bytes.extend(host);
+            }
+            Record::Soa {
+                origin,
+                mailbox,
+                version,
+                refresh,
+                retry,
+                expire,
+                minimum,
+                ..
+            } => {
+                let origin = origin.to_bytes();
+                let mailbox = mailbox.to_bytes();
+                let rd_len = (4 * 5) + origin.len() + mailbox.len();
+                bytes.extend((rd_len as u16).to_be_bytes());
+                bytes.extend(origin);
+                bytes.extend(mailbox);
+                bytes.extend(version.to_be_bytes());
+                bytes.extend(refresh.to_be_bytes());
+                bytes.extend(retry.to_be_bytes());
+                bytes.extend(expire.to_be_bytes());
+                bytes.extend(minimum.to_be_bytes());
+            }
+            Record::Mb { host, .. } => {
+                let host = host.to_bytes();
+                bytes.extend((host.len() as u16).to_be_bytes());
+                bytes.extend(host);
+            }
+            Record::Mg { host, .. } => {
+                let host = host.to_bytes();
+                bytes.extend((host.len() as u16).to_be_bytes());
+                bytes.extend(host);
+            }
+            Record::Mr { host, .. } => {
+                let host = host.to_bytes();
+                bytes.extend((host.len() as u16).to_be_bytes());
+                bytes.extend(host);
+            }
+            Record::Null { data, .. } => {
+                bytes.extend((data.len() as u16).to_be_bytes());
+                bytes.extend(data);
+            }
+            Record::Wks {
+                addr,
+                protocol,
+                data,
+                ..
+            } => {
+                let rd_len = 4 + 1 + data.len();
+                bytes.extend((rd_len as u16).to_be_bytes());
+                bytes.extend(addr.octets());
+                bytes.push(*protocol);
+                bytes.extend(data);
+            }
+            Record::Ptr { host, .. } => {
+                let host = host.to_bytes();
+                bytes.extend((host.len() as u16).to_be_bytes());
+                bytes.extend(host);
+            }
+            Record::Hinfo { cpu, os, .. } => {
+                let cpu = cpu.as_bytes();
+                let os = os.as_bytes();
+                let rd_len = 1 + cpu.len() + 1 + os.len();
+                bytes.extend((rd_len as u16).to_be_bytes());
+                bytes.push(cpu.len() as u8);
+                bytes.extend(cpu);
+                bytes.push(os.len() as u8);
+                bytes.extend(os);
+            }
+            Record::Minfo {
+                r_mailbox,
+                e_mailbox,
+                ..
+            } => {
+                let r_mailbox = r_mailbox.to_bytes();
+                let e_mailbox = e_mailbox.to_bytes();
+                let rd_len = r_mailbox.len() + e_mailbox.len();
+                bytes.extend((rd_len as u16).to_be_bytes());
+                bytes.extend(r_mailbox);
+                bytes.extend(e_mailbox);
+            }
+            Record::Mx { priority, host, .. } => {
+                let host = host.to_bytes();
+                let rd_len = 2 + host.len();
+                bytes.extend((rd_len as u16).to_be_bytes());
+                bytes.extend(priority.to_be_bytes());
+                bytes.extend(host);
+            }
+            Record::Txt { content, .. } => {
+                let bytez = content.as_bytes();
+                let chunks = bytez.chunks(255);
+                let rd_len = bytez.len() + chunks.len();
+                bytes.extend((rd_len as u16).to_be_bytes());
+                for chunk in chunks {
+                    bytes.push(chunk.len() as u8);
+                    bytes.extend(chunk);
+                }
+            }
+            Record::Aaaa { addr, .. } => {
+                bytes.extend((16 as u16).to_be_bytes());
+                bytes.extend(addr.octets());
+            }
         }
 
         bytes
@@ -384,7 +827,39 @@ impl Display for Record {
         match self {
             Record::A { addr, .. } => write!(f, "A {addr}"),
             Record::Ns { host, .. } => write!(f, "NS {host}"),
+            Record::Md { host, .. } => write!(f, "MD {host}"),
+            Record::Mf { host, .. } => write!(f, "MF {host}"),
             Record::Cname { host, .. } => write!(f, "CNAME {host}"),
+            Record::Soa {
+                origin,
+                mailbox,
+                version,
+                refresh,
+                retry,
+                expire,
+                minimum,
+                ..
+            } => write!(
+                f,
+                "SOA {origin} {mailbox} {version} {refresh} {retry} {expire} {minimum}"
+            ),
+            Record::Mb { host, .. } => write!(f, "MB {host}"),
+            Record::Mg { host, .. } => write!(f, "MG {host}"),
+            Record::Mr { host, .. } => write!(f, "MR {host}"),
+            Record::Null { data, .. } => write!(f, "NULL {data:x?}"),
+            Record::Wks {
+                addr,
+                protocol,
+                data,
+                ..
+            } => write!(f, "WKS {addr} {protocol} {data:x?}"),
+            Record::Ptr { host, .. } => write!(f, "PTR {host}"),
+            Record::Hinfo { cpu, os, .. } => write!(f, "HINFO {cpu} {os}"),
+            Record::Minfo {
+                r_mailbox,
+                e_mailbox,
+                ..
+            } => write!(f, "MINFO {r_mailbox} {e_mailbox}"),
             Record::Mx { priority, host, .. } => write!(f, "MX {priority} {host}"),
             Record::Txt { content, .. } => write!(f, "TXT {content}"),
             Record::Aaaa { addr, .. } => write!(f, "AAAA {addr}"),
