@@ -50,6 +50,12 @@ impl Server {
         let question = &response.questions[0];
         println!("question: {} {:?}", question.name, question.q_type);
 
+        if !matches!(response.header.op_code, OperationCode::Query) {
+            response.header.resp_code = ResponseCode::NotImplemented;
+            println!("response: {:?}", response.header.resp_code);
+            return response;
+        }
+
         let matched_records: Vec<&_> = self
             .zone
             .records
