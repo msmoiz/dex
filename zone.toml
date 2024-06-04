@@ -5,6 +5,19 @@ name = "example.com."
 [[records]]
 name = "example.com."
 class = "IN"
+ttl = 86400
+type = "SOA"
+origin = "ns.example.com."
+mailbox = "user.example.com."
+version = 9000
+refresh = 7200
+retry = 3600
+expire = 1209600
+minimum = 3600
+
+[[records]]
+name = "example.com."
+class = "IN"
 ttl = 60
 type = "A"
 addr = "192.158.1.38"
