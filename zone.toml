@@ -1,0 +1,8 @@
+# An example zone file that can be used for testing.
+
+[[records]]
+name = "example.com."
+class = "IN"
+ttl = 60
+type = "A"
+addr = "192.158.1.38"

@@ -1,5 +1,6 @@
 use std::{
     fmt::Display,
+    fs,
     net::{Ipv4Addr, Ipv6Addr},
 };
 
@@ -11,27 +12,42 @@ fn main() {
 }
 
 fn serve() {
+    let zone_file = "zone.toml";
+    println!("reading zone data from {zone_file}");
+    let zone_data = fs::read_to_string(zone_file).unwrap();
+    let zone = Zone::from_toml(&zone_data).unwrap();
+
     println!("listening on port 5380");
     let socket = std::net::UdpSocket::bind("0.0.0.0:5380").unwrap();
     loop {
         let mut buf = [0; 512];
         let (_, addr) = socket.recv_from(&mut buf).unwrap();
         println!("received connection from addr: {addr}");
+
         let mut bytes = Bytes::from_buf(&buf);
-        let mut message = Message::from_bytes(&mut bytes);
+        let message = Message::from_bytes(&mut bytes);
         let question = &message.questions[0];
         println!("message: {} {}", question.name, question.q_type);
-        message.header.is_response = true;
-        message.header.is_authority = true;
-        message.header.resp_code = 0;
-        message.header.answer_count = 1;
-        message.answer_records.push(Record::A {
-            name: "example.com".into(),
-            class: Class::In,
-            ttl: 0,
-            addr: "127.0.0.1".parse().unwrap(),
-        });
-        let buf = message.to_bytes();
+
+        let mut response = message;
+        response.header.is_response = true;
+        match zone
+            .records
+            .iter()
+            .find(|r| r.name() == response.questions[0].name)
+        {
+            Some(record) => {
+                response.header.is_authority = true;
+                response.header.resp_code = 0;
+                response.header.answer_count = 1;
+                response.answer_records.push(record.clone());
+            }
+            None => {
+                response.header.resp_code = 3;
+            }
+        }
+
+        let buf = response.to_bytes();
         socket.send_to(&buf, addr).unwrap();
     }
 }
@@ -173,35 +189,20 @@ impl Record {
             bytes.push(label.len() as u8);
             bytes.extend(label.as_bytes());
         }
-        bytes.push(0);
-
-        println!("name len: {}", bytes.len());
-        println!("name bytes: {:?}", bytes);
 
         let r_code = match self {
             Record::A { .. } => 1 as u16,
             _ => unimplemented!(),
-        }
-        .to_be_bytes();
-        println!("rcode len: {}", r_code.len());
-        bytes.extend(r_code);
+        };
+        bytes.extend(r_code.to_be_bytes());
 
-        let class: u16 = self.class().into();
-        println!("class len: {}", class.to_be_bytes().len());
-        bytes.extend(class.to_be_bytes());
-
-        let ttl = self.ttl().to_be_bytes();
-        println!("ttl len: {}", ttl.len());
-        bytes.extend(ttl);
+        bytes.extend(u16::from(self.class()).to_be_bytes());
+        bytes.extend(self.ttl().to_be_bytes());
 
         match self {
             Record::A { addr, .. } => {
-                let rd_len = 4 as u16;
-                println!("rd len: {}", rd_len.to_be_bytes().len());
-                bytes.extend(rd_len.to_be_bytes());
-                let rdata = addr.octets();
-                println!("rdata len: {}", rdata.len());
-                bytes.extend(rdata);
+                bytes.extend((4 as u16).to_be_bytes());
+                bytes.extend(addr.octets());
             }
             _ => unimplemented!(),
         }
@@ -361,30 +362,22 @@ impl Message {
     fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
 
-        let header = self.header.to_bytes();
-        println!("header len: {}", header.len());
-        bytes.extend(header);
+        bytes.extend(self.header.to_bytes());
 
         for question in &self.questions {
-            let question = question.to_bytes();
-            println!("question len: {}", question.len());
-            bytes.extend(question);
+            bytes.extend(question.to_bytes());
         }
 
         for record in &self.answer_records {
-            let record = record.to_bytes();
-            println!("answer len: {}", record.len());
-            bytes.extend(record);
+            bytes.extend(record.to_bytes());
         }
 
         for record in &self.authority_records {
-            let record = record.to_bytes();
-            bytes.extend(record);
+            bytes.extend(record.to_bytes());
         }
 
         for record in &self.additional_records {
-            let record = record.to_bytes();
-            bytes.extend(record);
+            bytes.extend(record.to_bytes());
         }
 
         bytes
@@ -461,33 +454,31 @@ impl Header {
     fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
 
-        let id = self.id.to_be_bytes();
-        bytes.extend(id);
+        bytes.extend(self.id.to_be_bytes());
 
-        let mut first_byte = 0000_0000;
-        first_byte |= (self.is_response as u8) << 7;
-        first_byte |= self.op_code << 3;
-        first_byte |= (self.is_authority as u8) << 2;
-        first_byte |= (self.is_truncated as u8) << 1;
-        first_byte |= (self.recursion_desired as u8) << 0;
-        bytes.push(first_byte);
+        let codes1 = {
+            let mut byte = 0000_0000;
+            byte |= (self.is_response as u8) << 7;
+            byte |= self.op_code << 3;
+            byte |= (self.is_authority as u8) << 2;
+            byte |= (self.is_truncated as u8) << 1;
+            byte |= (self.recursion_desired as u8) << 0;
+            byte
+        };
+        bytes.push(codes1);
 
-        let mut second_byte = 0;
-        second_byte |= (self.recursion_available as u8) << 7;
-        second_byte |= self.resp_code as u8;
-        bytes.push(second_byte);
+        let codes2 = {
+            let mut byte = 0;
+            byte |= (self.recursion_available as u8) << 7;
+            byte |= self.resp_code as u8;
+            byte
+        };
+        bytes.push(codes2);
 
-        let question_count = self.question_count.to_be_bytes();
-        bytes.extend(question_count);
-
-        let answer_count = self.answer_count.to_be_bytes();
-        bytes.extend(answer_count);
-
-        let authority_count = self.authority_count.to_be_bytes();
-        bytes.extend(authority_count);
-
-        let additional_count = self.additional_count.to_be_bytes();
-        bytes.extend(additional_count);
+        bytes.extend(self.question_count.to_be_bytes());
+        bytes.extend(self.answer_count.to_be_bytes());
+        bytes.extend(self.authority_count.to_be_bytes());
+        bytes.extend(self.additional_count.to_be_bytes());
 
         bytes
     }
@@ -542,11 +533,8 @@ impl Question {
             bytes.extend(label.as_bytes());
         }
 
-        let q_type = self.q_type.to_be_bytes();
-        bytes.extend(q_type);
-
-        let q_class = self.q_class.to_be_bytes();
-        bytes.extend(q_class);
+        bytes.extend(self.q_type.to_be_bytes());
+        bytes.extend(self.q_class.to_be_bytes());
 
         bytes
     }
