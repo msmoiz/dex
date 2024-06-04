@@ -161,19 +161,19 @@ enum Record {
         ttl: u32,
         addr: Ipv4Addr,
     },
-    /// IPv6 address record.
-    Aaaa {
+    /// Name server record.
+    Ns {
         name: Name,
         class: Class,
         ttl: u32,
-        addr: Ipv6Addr,
+        host: Name,
     },
     /// Canonical name record.
     Cname {
         name: Name,
         class: Class,
         ttl: u32,
-        host: String,
+        host: Name,
     },
     /// Mail exchange record.
     Mx {
@@ -181,14 +181,7 @@ enum Record {
         class: Class,
         ttl: u32,
         priority: u16,
-        host: String,
-    },
-    /// Name server record.
-    Ns {
-        name: Name,
-        class: Class,
-        ttl: u32,
-        host: String,
+        host: Name,
     },
     /// Text record.
     Txt {
@@ -197,6 +190,13 @@ enum Record {
         ttl: u32,
         content: String,
     },
+    /// IPv6 address record.
+    Aaaa {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        addr: Ipv6Addr,
+    },
 }
 
 impl Record {
@@ -204,7 +204,7 @@ impl Record {
     fn from_bytes(bytes: &mut Bytes) -> Self {
         let name = Name::from_bytes(bytes);
         let r_type = bytes.read_u16().unwrap();
-        let r_class = bytes.read_u16().unwrap();
+        let class = bytes.read_u16().unwrap().into();
         let ttl = bytes.read_u32().unwrap();
         let _rd_len = bytes.read_u16().unwrap();
 
@@ -215,7 +215,7 @@ impl Record {
 
                 Self::A {
                     name,
-                    class: r_class.into(),
+                    class,
                     ttl,
                     addr,
                 }
@@ -228,11 +228,11 @@ impl Record {
     fn name(&self) -> &Name {
         match self {
             Record::A { name, .. } => name,
-            Record::Aaaa { name, .. } => name,
+            Record::Ns { name, .. } => name,
             Record::Cname { name, .. } => name,
             Record::Mx { name, .. } => name,
-            Record::Ns { name, .. } => name,
             Record::Txt { name, .. } => name,
+            Record::Aaaa { name, .. } => name,
         }
     }
 
@@ -240,11 +240,11 @@ impl Record {
     fn class(&self) -> Class {
         match self {
             Record::A { class, .. } => class,
-            Record::Aaaa { class, .. } => class,
+            Record::Ns { class, .. } => class,
             Record::Cname { class, .. } => class,
             Record::Mx { class, .. } => class,
-            Record::Ns { class, .. } => class,
             Record::Txt { class, .. } => class,
+            Record::Aaaa { class, .. } => class,
         }
         .clone()
     }
@@ -253,11 +253,23 @@ impl Record {
     fn ttl(&self) -> u32 {
         *match self {
             Record::A { ttl, .. } => ttl,
-            Record::Aaaa { ttl, .. } => ttl,
+            Record::Ns { ttl, .. } => ttl,
             Record::Cname { ttl, .. } => ttl,
             Record::Mx { ttl, .. } => ttl,
-            Record::Ns { ttl, .. } => ttl,
             Record::Txt { ttl, .. } => ttl,
+            Record::Aaaa { ttl, .. } => ttl,
+        }
+    }
+
+    /// Returns the code of the record.
+    fn code(&self) -> u16 {
+        match self {
+            Record::A { .. } => 1,
+            Record::Ns { .. } => 2,
+            Record::Cname { .. } => 5,
+            Record::Mx { .. } => 15,
+            Record::Txt { .. } => 16,
+            Record::Aaaa { .. } => 28,
         }
     }
 
@@ -266,16 +278,11 @@ impl Record {
         let mut bytes = vec![];
 
         bytes.extend(self.name().to_bytes());
-
-        let r_code = match self {
-            Record::A { .. } => 1 as u16,
-            _ => unimplemented!(),
-        };
-        bytes.extend(r_code.to_be_bytes());
-
+        bytes.extend(self.code().to_be_bytes());
         bytes.extend(u16::from(self.class()).to_be_bytes());
         bytes.extend(self.ttl().to_be_bytes());
 
+        // @todo: support all types
         match self {
             Record::A { addr, .. } => {
                 bytes.extend((4 as u16).to_be_bytes());
@@ -293,11 +300,11 @@ impl Display for Record {
         write!(f, "{} {} {} ", self.name(), self.class(), self.ttl())?;
         match self {
             Record::A { addr, .. } => write!(f, "A {addr}"),
-            Record::Aaaa { addr, .. } => write!(f, "AAAA {addr}"),
+            Record::Ns { host, .. } => write!(f, "NS {host}"),
             Record::Cname { host, .. } => write!(f, "CNAME {host}"),
             Record::Mx { priority, host, .. } => write!(f, "MX {priority} {host}"),
-            Record::Ns { host, .. } => write!(f, "NS {host}"),
             Record::Txt { content, .. } => write!(f, "TXT {content}"),
+            Record::Aaaa { addr, .. } => write!(f, "AAAA {addr}"),
         }
     }
 }
