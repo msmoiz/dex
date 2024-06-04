@@ -8,30 +8,49 @@ use anyhow::Result;
 use serde::{de::Visitor, Deserialize};
 
 fn main() {
-    serve();
+    Server::start();
 }
 
-fn serve() {
-    let zone_file = "zone.toml";
-    println!("reading zone data from {zone_file}");
-    let zone_data = fs::read_to_string(zone_file).unwrap();
-    let zone = Zone::from_toml(&zone_data).unwrap();
+/// A DNS server.
+struct Server {
+    zone: Zone,
+}
 
-    println!("listening on port 5380");
-    let socket = std::net::UdpSocket::bind("0.0.0.0:5380").unwrap();
-    loop {
-        let mut buf = [0; 512];
-        let (_, addr) = socket.recv_from(&mut buf).unwrap();
-        println!("received connection from addr: {addr}");
+impl Server {
+    /// Starts a new DNS server.
+    fn start() {
+        let zone_file = "zone.toml";
+        println!("loading zone data from {zone_file}");
+        let zone_data = fs::read_to_string(zone_file).unwrap();
+        let zone = Zone::from_toml(&zone_data).unwrap();
+        let server = Self { zone };
 
-        let mut bytes = Bytes::from_buf(&buf);
-        let message = Message::from_bytes(&mut bytes);
-        let question = &message.questions[0];
-        println!("message: {} {:?}", question.name, question.q_type);
+        println!("listening on port 5380");
+        let socket = std::net::UdpSocket::bind("0.0.0.0:5380").unwrap();
+        loop {
+            let mut q_buf = [0; 512];
+            let (_, addr) = socket.recv_from(&mut q_buf).unwrap();
+            println!("received query from {addr}");
+            let mut q_bytes = Bytes::from_buf(&q_buf);
+            let query = Message::from_bytes(&mut q_bytes);
+            let response = server.serve(query);
+            let r_bytes = response.to_bytes();
+            socket.send_to(&r_bytes, addr).unwrap();
+            println!("returned response to sender");
+        }
+    }
 
-        let mut response = message;
+    /// Serves a DNS query.
+    ///
+    /// Returns a DNS response.
+    fn serve(&self, query: Message) -> Message {
+        let question = &query.questions[0];
+        println!("question: {} {:?}", question.name, question.q_type);
+
+        let mut response = query;
         response.header.is_response = true;
-        match zone
+        match self
+            .zone
             .records
             .iter()
             .find(|r| r.name() == &response.questions[0].name)
@@ -47,8 +66,8 @@ fn serve() {
             }
         }
 
-        let buf = response.to_bytes();
-        socket.send_to(&buf, addr).unwrap();
+        println!("response: {:?}", response.header.resp_code);
+        response
     }
 }
 
