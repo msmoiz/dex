@@ -27,7 +27,7 @@ fn serve() {
         let mut bytes = Bytes::from_buf(&buf);
         let message = Message::from_bytes(&mut bytes);
         let question = &message.questions[0];
-        println!("message: {} {}", question.name, question.q_type);
+        println!("message: {} {:?}", question.name, question.q_type);
 
         let mut response = message;
         response.header.is_response = true;
@@ -484,11 +484,115 @@ impl Header {
     }
 }
 
+/// The type of a DNS question.
+#[derive(Debug, Clone)]
+enum QuestionType {
+    /// A host address.
+    A,
+    /// An authoritative name server.
+    NS,
+    /// A mail destination (deprecated in favor of MX).
+    MD,
+    /// A mail forwarder (deprecated in favor of MX).
+    MF,
+    /// The canonical name for an alias.
+    CNAME,
+    /// Marks the start of a zone of authority.
+    SOA,
+    /// A mailbox domain name (experimental).
+    MB,
+    /// A mail group member (experimental).
+    MG,
+    /// A mail rename domain name (experimental).
+    MR,
+    /// A null record (experimental).
+    NULL,
+    /// A well known service description.
+    WKS,
+    /// A domain name pointer.
+    PTR,
+    /// Host information.
+    HINFO,
+    /// Mailbox or mail list information.
+    MINFO,
+    /// Mail exchange.
+    MX,
+    /// Text strings.
+    TXT,
+    /// A request for a transfer of an entire zone.
+    AXFR,
+    /// A request for mailbox-related records (MB, MG or MR).
+    MAILB,
+    /// A request for mail agent records (deprecated in favor of MX).
+    MAILA,
+    /// A request for all records
+    ALL,
+}
+
+impl From<u16> for QuestionType {
+    fn from(value: u16) -> Self {
+        use QuestionType::*;
+
+        match value {
+            1 => A,
+            2 => NS,
+            3 => MD,
+            4 => MF,
+            5 => CNAME,
+            6 => SOA,
+            7 => MB,
+            8 => MG,
+            9 => MR,
+            10 => NULL,
+            11 => WKS,
+            12 => PTR,
+            13 => HINFO,
+            14 => MINFO,
+            15 => MX,
+            16 => TXT,
+            252 => AXFR,
+            253 => MAILB,
+            254 => MAILA,
+            255 => ALL,
+            _ => panic!("unsupported question type: {value}"),
+        }
+    }
+}
+
+impl From<QuestionType> for u16 {
+    fn from(value: QuestionType) -> Self {
+        use QuestionType::*;
+
+        match value {
+            A => 1,
+            NS => 2,
+            MD => 3,
+            MF => 4,
+            CNAME => 5,
+            SOA => 6,
+            MB => 7,
+            MG => 8,
+            MR => 9,
+            NULL => 10,
+            WKS => 11,
+            PTR => 12,
+            HINFO => 13,
+            MINFO => 14,
+            MX => 15,
+            TXT => 16,
+            AXFR => 252,
+            MAILB => 253,
+            MAILA => 254,
+            ALL => 255,
+        }
+    }
+}
+
 /// A DNS question.
 #[derive(Debug)]
 struct Question {
     name: String,
-    q_type: u16,
+    q_type: QuestionType,
     q_class: u16,
 }
 
@@ -510,7 +614,7 @@ impl Question {
 
         let name = labels.join(".");
 
-        let q_type = bytes.read_u16().unwrap();
+        let q_type = bytes.read_u16().unwrap().into();
         let q_class = bytes.read_u16().unwrap();
 
         Self {
@@ -533,7 +637,7 @@ impl Question {
             bytes.extend(label.as_bytes());
         }
 
-        bytes.extend(self.q_type.to_be_bytes());
+        bytes.extend(u16::from(self.q_type.clone()).to_be_bytes());
         bytes.extend(self.q_class.to_be_bytes());
 
         bytes
