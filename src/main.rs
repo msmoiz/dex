@@ -18,8 +18,21 @@ fn serve() {
         let (_, addr) = socket.recv_from(&mut buf).unwrap();
         println!("received connection from addr: {addr}");
         let mut bytes = Bytes::from_buf(&buf);
-        let message = Message::from_bytes(&mut bytes);
-        println!("{message:?}");
+        let mut message = Message::from_bytes(&mut bytes);
+        let question = &message.questions[0];
+        println!("message: {} {}", question.name, question.q_type);
+        message.header.is_response = true;
+        message.header.is_authority = true;
+        message.header.resp_code = 0;
+        message.header.answer_count = 1;
+        message.answer_records.push(Record::A {
+            name: "example.com".into(),
+            class: Class::In,
+            ttl: 0,
+            addr: "127.0.0.1".parse().unwrap(),
+        });
+        let buf = message.to_bytes();
+        socket.send_to(&buf, addr).unwrap();
     }
 }
 
@@ -73,7 +86,7 @@ enum Record {
 }
 
 impl Record {
-    /// Creatse a Record from a byte stream.
+    /// Creates a Record from a byte stream.
     fn from_bytes(bytes: &mut Bytes) -> Self {
         let mut labels = vec![];
 
@@ -86,6 +99,7 @@ impl Record {
             let label = String::from_utf8(bytez).unwrap();
             labels.push(label);
         }
+        labels.push("".to_string());
 
         let name = labels.join(".");
 
@@ -146,6 +160,54 @@ impl Record {
             Record::Txt { ttl, .. } => ttl,
         }
     }
+
+    /// Converts a Record to a byte stream.
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+
+        for label in self.name().split(".") {
+            if label == "" {
+                bytes.push(0);
+                break;
+            }
+            bytes.push(label.len() as u8);
+            bytes.extend(label.as_bytes());
+        }
+        bytes.push(0);
+
+        println!("name len: {}", bytes.len());
+        println!("name bytes: {:?}", bytes);
+
+        let r_code = match self {
+            Record::A { .. } => 1 as u16,
+            _ => unimplemented!(),
+        }
+        .to_be_bytes();
+        println!("rcode len: {}", r_code.len());
+        bytes.extend(r_code);
+
+        let class: u16 = self.class().into();
+        println!("class len: {}", class.to_be_bytes().len());
+        bytes.extend(class.to_be_bytes());
+
+        let ttl = self.ttl().to_be_bytes();
+        println!("ttl len: {}", ttl.len());
+        bytes.extend(ttl);
+
+        match self {
+            Record::A { addr, .. } => {
+                let rd_len = 4 as u16;
+                println!("rd len: {}", rd_len.to_be_bytes().len());
+                bytes.extend(rd_len.to_be_bytes());
+                let rdata = addr.octets();
+                println!("rdata len: {}", rdata.len());
+                bytes.extend(rdata);
+            }
+            _ => unimplemented!(),
+        }
+
+        bytes
+    }
 }
 
 impl Display for Record {
@@ -198,6 +260,17 @@ impl From<u16> for Class {
             3 => Class::Ch,
             4 => Class::Hs,
             _ => panic!("unsupported class: {value}"),
+        }
+    }
+}
+
+impl From<Class> for u16 {
+    fn from(value: Class) -> Self {
+        match value {
+            Class::In => 1,
+            Class::Cs => 2,
+            Class::Ch => 3,
+            Class::Hs => 4,
         }
     }
 }
@@ -283,6 +356,39 @@ impl Message {
             additional_records,
         }
     }
+
+    /// Converts a Message to a byte stream.
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+
+        let header = self.header.to_bytes();
+        println!("header len: {}", header.len());
+        bytes.extend(header);
+
+        for question in &self.questions {
+            let question = question.to_bytes();
+            println!("question len: {}", question.len());
+            bytes.extend(question);
+        }
+
+        for record in &self.answer_records {
+            let record = record.to_bytes();
+            println!("answer len: {}", record.len());
+            bytes.extend(record);
+        }
+
+        for record in &self.authority_records {
+            let record = record.to_bytes();
+            bytes.extend(record);
+        }
+
+        for record in &self.additional_records {
+            let record = record.to_bytes();
+            bytes.extend(record);
+        }
+
+        bytes
+    }
 }
 
 /// Message header.
@@ -350,6 +456,41 @@ impl Header {
             additional_count,
         }
     }
+
+    /// Converts a Header to a byte stream.
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+
+        let id = self.id.to_be_bytes();
+        bytes.extend(id);
+
+        let mut first_byte = 0000_0000;
+        first_byte |= (self.is_response as u8) << 7;
+        first_byte |= self.op_code << 3;
+        first_byte |= (self.is_authority as u8) << 2;
+        first_byte |= (self.is_truncated as u8) << 1;
+        first_byte |= (self.recursion_desired as u8) << 0;
+        bytes.push(first_byte);
+
+        let mut second_byte = 0;
+        second_byte |= (self.recursion_available as u8) << 7;
+        second_byte |= self.resp_code as u8;
+        bytes.push(second_byte);
+
+        let question_count = self.question_count.to_be_bytes();
+        bytes.extend(question_count);
+
+        let answer_count = self.answer_count.to_be_bytes();
+        bytes.extend(answer_count);
+
+        let authority_count = self.authority_count.to_be_bytes();
+        bytes.extend(authority_count);
+
+        let additional_count = self.additional_count.to_be_bytes();
+        bytes.extend(additional_count);
+
+        bytes
+    }
 }
 
 /// A DNS question.
@@ -374,6 +515,7 @@ impl Question {
             let label = String::from_utf8(bytez).unwrap();
             labels.push(label);
         }
+        labels.push("".to_string());
 
         let name = labels.join(".");
 
@@ -385,6 +527,28 @@ impl Question {
             q_type,
             q_class,
         }
+    }
+
+    /// Converts a Question to a byte stream.
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+
+        for label in self.name.split(".") {
+            if label == "" {
+                bytes.push(0);
+                break;
+            }
+            bytes.push(label.len() as u8);
+            bytes.extend(label.as_bytes());
+        }
+
+        let q_type = self.q_type.to_be_bytes();
+        bytes.extend(q_type);
+
+        let q_class = self.q_class.to_be_bytes();
+        bytes.extend(q_class);
+
+        bytes
     }
 }
 
