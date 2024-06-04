@@ -98,17 +98,61 @@ impl Server {
     }
 }
 
+/// A DNS label.
+///
+/// A label must be shorter than 63 bytes.
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct Label(String);
+
+impl Label {
+    /// Creates a new Label from a string.
+    fn from_str(text: &str) -> Self {
+        assert!(text.len() < 63);
+        Self(text.to_owned())
+    }
+
+    /// Creates a new Label from a byte stream.
+    fn from_bytes(bytes: &mut Bytes) -> Self {
+        let len = bytes.read().unwrap();
+        let bytez = bytes.read_exact(len as usize).unwrap();
+        let text = String::from_utf8(bytez).unwrap();
+        Self::from_str(&text)
+    }
+
+    /// Converts a Label to a byte stream.
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        bytes.push(self.0.len() as u8);
+        bytes.extend(self.0.as_bytes());
+        bytes
+    }
+
+    /// Returns the length of the label.
+    fn len(&self) -> u8 {
+        self.0.len() as u8
+    }
+}
+
 /// A fully qualified DNS domain name.
+///
+/// A name must be shorter than 255 bytes.
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Name {
-    labels: Vec<String>,
+    labels: Vec<Label>,
 }
 
 impl Name {
+    /// Creates a Name from labels.
+    fn from_labels(labels: Vec<Label>) -> Self {
+        let len = labels.len() + labels.iter().fold(0, |acc, l| acc + l.len() as usize);
+        assert!(len < 255);
+        Self { labels }
+    }
+
     /// Creates a Name from a string.
     fn from_str(input: &str) -> Self {
-        let labels = input.split(".").map(|s| s.to_string()).collect();
-        Self { labels }
+        let labels = input.split(".").map(|s| Label::from_str(s)).collect();
+        Self::from_labels(labels)
     }
 
     /// Creates a Name from a byte stream.
@@ -116,17 +160,15 @@ impl Name {
         let mut labels = vec![];
 
         loop {
-            let len = bytes.read().unwrap();
-            if len == 0 {
+            let label = Label::from_bytes(bytes);
+            let is_root = label.len() == 0;
+            labels.push(label);
+            if is_root {
                 break;
             }
-            let bytez = bytes.read_exact(len as usize).unwrap();
-            let label = String::from_utf8(bytez).unwrap();
-            labels.push(label);
         }
-        labels.push("".to_string());
 
-        Self { labels }
+        Self::from_labels(labels)
     }
 
     /// Returns true if this name "contains" the other name.
@@ -154,23 +196,22 @@ impl Name {
     /// Converts a Name to a byte stream.
     fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
-
         for label in &self.labels {
-            if label == "" {
-                bytes.push(0);
-                break;
-            }
-            bytes.push(label.len() as u8);
-            bytes.extend(label.as_bytes());
+            bytes.extend(label.to_bytes());
         }
-
         bytes
     }
 }
 
 impl Display for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.labels.join("."))
+        for label in &self.labels {
+            write!(f, "{}", label.0)?;
+            if label.0 != "" {
+                write!(f, ".")?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -192,10 +233,10 @@ impl<'de> Deserialize<'de> for Name {
             where
                 E: serde::de::Error,
             {
-                let labels: Vec<_> = v.split(".").map(|s| s.to_owned()).collect();
+                let labels: Vec<_> = v.split(".").map(|s| Label::from_str(s)).collect();
 
                 match labels.last() {
-                    Some(label) if label != "" => {
+                    Some(label) if label.0 != "" => {
                         return Err(serde::de::Error::invalid_value(
                             serde::de::Unexpected::Str(v),
                             &self,
@@ -210,7 +251,7 @@ impl<'de> Deserialize<'de> for Name {
                     _ => {}
                 };
 
-                Ok(Name { labels })
+                Ok(Name::from_labels(labels))
             }
         }
 
