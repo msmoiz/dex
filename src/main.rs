@@ -588,12 +588,56 @@ impl From<QuestionType> for u16 {
     }
 }
 
+/// The class of a DNS question.
+#[derive(Debug, Clone)]
+enum QuestionClass {
+    /// Internet.
+    In,
+    /// CS Net.
+    Cs,
+    /// Chaos.
+    Ch,
+    /// Hesiod.
+    Hs,
+    /// Any.
+    Any,
+}
+
+impl From<u16> for QuestionClass {
+    fn from(value: u16) -> Self {
+        use QuestionClass::*;
+
+        match value {
+            1 => In,
+            2 => Cs,
+            3 => Ch,
+            4 => Hs,
+            255 => Any,
+            _ => panic!("unsupported question class: {value}"),
+        }
+    }
+}
+
+impl From<QuestionClass> for u16 {
+    fn from(value: QuestionClass) -> Self {
+        use QuestionClass::*;
+
+        match value {
+            In => 1,
+            Cs => 2,
+            Ch => 3,
+            Hs => 4,
+            Any => 255,
+        }
+    }
+}
+
 /// A DNS question.
 #[derive(Debug)]
 struct Question {
     name: String,
     q_type: QuestionType,
-    q_class: u16,
+    q_class: QuestionClass,
 }
 
 impl Question {
@@ -615,7 +659,7 @@ impl Question {
         let name = labels.join(".");
 
         let q_type = bytes.read_u16().unwrap().into();
-        let q_class = bytes.read_u16().unwrap();
+        let q_class = bytes.read_u16().unwrap().into();
 
         Self {
             name,
@@ -638,7 +682,7 @@ impl Question {
         }
 
         bytes.extend(u16::from(self.q_type.clone()).to_be_bytes());
-        bytes.extend(self.q_class.to_be_bytes());
+        bytes.extend(u16::from(self.q_class.clone()).to_be_bytes());
 
         bytes
     }
