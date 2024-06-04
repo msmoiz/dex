@@ -5,6 +5,8 @@ use std::{
 };
 
 use anyhow::Result;
+use lazy_static::lazy_static;
+use regex::Regex;
 use serde::{de::Visitor, Deserialize};
 
 fn main() {
@@ -108,6 +110,14 @@ impl Label {
     /// Creates a new Label from a string.
     fn from_str(text: &str) -> Self {
         assert!(text.len() < 63);
+
+        lazy_static! {
+            static ref RE: Regex =
+                Regex::new("^[[:alpha:]]([[:alpha:]0-9-]*[[:alpha:]0-9])?$").unwrap();
+        }
+
+        assert!(text.is_empty() || RE.is_match(text));
+
         Self(text.to_owned())
     }
 
