@@ -135,7 +135,8 @@ impl Label {
 
 /// A fully qualified DNS domain name.
 ///
-/// A name must be shorter than 255 bytes.
+/// A name must be shorter than 255 bytes. The last label in a name must be the
+/// root label ("") and all other labels must non-empty.
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Name {
     labels: Vec<Label>,
@@ -144,8 +145,20 @@ struct Name {
 impl Name {
     /// Creates a Name from labels.
     fn from_labels(labels: Vec<Label>) -> Self {
+        assert!(!labels.is_empty());
+
         let len = labels.len() + labels.iter().fold(0, |acc, l| acc + l.len() as usize);
         assert!(len < 255);
+
+        let Some((last, rest)) = labels.split_last() else {
+            unreachable!()
+        };
+
+        assert_eq!(last.0, "");
+        for label in rest {
+            assert_ne!(label.0, "");
+        }
+
         Self { labels }
     }
 
