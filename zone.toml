@@ -1,5 +1,7 @@
 # An example zone file that can be used for testing.
 
+name = "example.com."
+
 [[records]]
 name = "example.com."
 class = "IN"
@@ -13,3 +15,10 @@ class = "IN"
 ttl = 60
 type = "A"
 addr = "102.210.5.22"
+
+[[records]]
+name = "sub.example.com."
+class = "IN"
+ttl = 60
+type = "NS"
+host = "ns.sub.example.com."

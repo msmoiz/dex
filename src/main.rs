@@ -66,8 +66,25 @@ impl Server {
                 response.answer_records.push(record.clone());
             }
         } else {
-            // @todo: look for ns records
-            response.header.resp_code = ResponseCode::NameError;
+            let ns_records: Vec<&_> = self
+                .zone
+                .records
+                .iter()
+                .filter(|r| matches!(r, Record::Ns { .. }))
+                .filter(|r| r.name() != &self.zone.name)
+                .filter(|r| r.name().contains(&question.name))
+                .collect();
+
+            if ns_records.len() > 0 {
+                response.header.is_authority = true;
+                response.header.resp_code = ResponseCode::Success;
+                response.header.authority_count = ns_records.len() as u16;
+                for record in ns_records {
+                    response.authority_records.push(record.clone());
+                }
+            } else {
+                response.header.resp_code = ResponseCode::NameError;
+            }
         }
 
         println!("response: {:?}", response.header.resp_code);
@@ -104,6 +121,28 @@ impl Name {
         labels.push("".to_string());
 
         Self { labels }
+    }
+
+    /// Returns true if this name "contains" the other name.
+    ///
+    /// Returns true if the other name is a subdomain of this name. This also
+    /// returns true when the name and the other name are equal.
+    fn contains(&self, other: &Self) -> bool {
+        if self == other {
+            return true;
+        }
+
+        let mut this = self.labels.iter().rev(); //     example.com.
+        let mut other = other.labels.iter().rev(); // sub.example.com.
+        loop {
+            match (this.next(), other.next()) {
+                (Some(t), Some(o)) if t == o => continue,
+                (Some(_), Some(_)) => return false,
+                (Some(_), None) => return false,
+                (None, Some(_)) => return true,
+                (None, None) => return true,
+            }
+        }
     }
 
     /// Converts a Name to a byte stream.
@@ -243,6 +282,16 @@ impl Record {
                     addr,
                 }
             }
+            2 => {
+                let host = Name::from_bytes(bytes);
+
+                Self::Ns {
+                    name,
+                    class,
+                    ttl,
+                    host,
+                }
+            }
             _ => todo!(),
         }
     }
@@ -310,6 +359,11 @@ impl Record {
             Record::A { addr, .. } => {
                 bytes.extend((4 as u16).to_be_bytes());
                 bytes.extend(addr.octets());
+            }
+            Record::Ns { host, .. } => {
+                let host = host.to_bytes();
+                bytes.extend((host.len() as u16).to_be_bytes());
+                bytes.extend(host);
             }
             _ => unimplemented!(),
         }
@@ -388,6 +442,8 @@ impl From<Class> for u16 {
 /// This usually represents a single domain.
 #[derive(Deserialize)]
 struct Zone {
+    /// Name of the zone.
+    name: Name,
     /// Records in the zone.
     records: Vec<Record>,
 }
@@ -930,6 +986,8 @@ mod tests {
     #[test]
     fn parse_toml() {
         let input = r#"
+            name = "example.com."
+
             [[records]]
             name = "example.com."
             class = "IN"
