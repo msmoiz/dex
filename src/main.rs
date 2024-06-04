@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{de::Visitor, Deserialize};
 
 fn main() {
     serve();
@@ -34,7 +34,7 @@ fn serve() {
         match zone
             .records
             .iter()
-            .find(|r| r.name() == response.questions[0].name)
+            .find(|r| r.name() == &response.questions[0].name)
         {
             Some(record) => {
                 response.header.is_authority = true;
@@ -52,57 +52,20 @@ fn serve() {
     }
 }
 
-/// A DNS resource record.
-#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "UPPERCASE")]
-enum Record {
-    /// IPv4 address record.
-    A {
-        name: String,
-        class: Class,
-        ttl: u32,
-        addr: Ipv4Addr,
-    },
-    /// IPv6 address record.
-    Aaaa {
-        name: String,
-        class: Class,
-        ttl: u32,
-        addr: Ipv6Addr,
-    },
-    /// Canonical name record.
-    Cname {
-        name: String,
-        class: Class,
-        ttl: u32,
-        host: String,
-    },
-    /// Mail exchange record.
-    Mx {
-        name: String,
-        class: Class,
-        ttl: u32,
-        priority: u16,
-        host: String,
-    },
-    /// Name server record.
-    Ns {
-        name: String,
-        class: Class,
-        ttl: u32,
-        host: String,
-    },
-    /// Text record.
-    Txt {
-        name: String,
-        class: Class,
-        ttl: u32,
-        content: String,
-    },
+/// A fully qualified DNS domain name.
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct Name {
+    labels: Vec<String>,
 }
 
-impl Record {
-    /// Creates a Record from a byte stream.
+impl Name {
+    /// Creates a Name from a string.
+    fn from_str(input: &str) -> Self {
+        let labels = input.split(".").map(|s| s.to_string()).collect();
+        Self { labels }
+    }
+
+    /// Creates a Name from a byte stream.
     fn from_bytes(bytes: &mut Bytes) -> Self {
         let mut labels = vec![];
 
@@ -117,8 +80,129 @@ impl Record {
         }
         labels.push("".to_string());
 
-        let name = labels.join(".");
+        Self { labels }
+    }
 
+    /// Converts a Name to a byte stream.
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+
+        for label in &self.labels {
+            if label == "" {
+                bytes.push(0);
+                break;
+            }
+            bytes.push(label.len() as u8);
+            bytes.extend(label.as_bytes());
+        }
+
+        bytes
+    }
+}
+
+impl Display for Name {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.labels.join("."))
+    }
+}
+
+impl<'de> Deserialize<'de> for Name {
+    fn deserialize<D>(deserializer: D) -> std::prelude::v1::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct NameVisitor;
+
+        impl<'de> Visitor<'de> for NameVisitor {
+            type Value = Name;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a fully-qualified domain name")
+            }
+
+            fn visit_str<E>(self, v: &str) -> std::prelude::v1::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                let labels: Vec<_> = v.split(".").map(|s| s.to_owned()).collect();
+
+                match labels.last() {
+                    Some(label) if label != "" => {
+                        return Err(serde::de::Error::invalid_value(
+                            serde::de::Unexpected::Str(v),
+                            &self,
+                        ));
+                    }
+                    None => {
+                        return Err(serde::de::Error::invalid_value(
+                            serde::de::Unexpected::Str(v),
+                            &self,
+                        ))
+                    }
+                    _ => {}
+                };
+
+                Ok(Name { labels })
+            }
+        }
+
+        deserializer.deserialize_str(NameVisitor)
+    }
+}
+
+/// A DNS resource record.
+#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "UPPERCASE")]
+enum Record {
+    /// IPv4 address record.
+    A {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        addr: Ipv4Addr,
+    },
+    /// IPv6 address record.
+    Aaaa {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        addr: Ipv6Addr,
+    },
+    /// Canonical name record.
+    Cname {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        host: String,
+    },
+    /// Mail exchange record.
+    Mx {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        priority: u16,
+        host: String,
+    },
+    /// Name server record.
+    Ns {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        host: String,
+    },
+    /// Text record.
+    Txt {
+        name: Name,
+        class: Class,
+        ttl: u32,
+        content: String,
+    },
+}
+
+impl Record {
+    /// Creates a Record from a byte stream.
+    fn from_bytes(bytes: &mut Bytes) -> Self {
+        let name = Name::from_bytes(bytes);
         let r_type = bytes.read_u16().unwrap();
         let r_class = bytes.read_u16().unwrap();
         let ttl = bytes.read_u32().unwrap();
@@ -141,7 +225,7 @@ impl Record {
     }
 
     /// Returns the name of the record.
-    fn name(&self) -> &str {
+    fn name(&self) -> &Name {
         match self {
             Record::A { name, .. } => name,
             Record::Aaaa { name, .. } => name,
@@ -181,14 +265,7 @@ impl Record {
     fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
 
-        for label in self.name().split(".") {
-            if label == "" {
-                bytes.push(0);
-                break;
-            }
-            bytes.push(label.len() as u8);
-            bytes.extend(label.as_bytes());
-        }
+        bytes.extend(self.name().to_bytes());
 
         let r_code = match self {
             Record::A { .. } => 1 as u16,
@@ -635,7 +712,7 @@ impl From<QuestionClass> for u16 {
 /// A DNS question.
 #[derive(Debug)]
 struct Question {
-    name: String,
+    name: Name,
     q_type: QuestionType,
     q_class: QuestionClass,
 }
@@ -643,21 +720,7 @@ struct Question {
 impl Question {
     /// Creates a Question from a byte stream.
     fn from_bytes(bytes: &mut Bytes) -> Self {
-        let mut labels = vec![];
-
-        loop {
-            let len = bytes.read().unwrap();
-            if len == 0 {
-                break;
-            }
-            let bytez = bytes.read_exact(len as usize).unwrap();
-            let label = String::from_utf8(bytez).unwrap();
-            labels.push(label);
-        }
-        labels.push("".to_string());
-
-        let name = labels.join(".");
-
+        let name = Name::from_bytes(bytes);
         let q_type = bytes.read_u16().unwrap().into();
         let q_class = bytes.read_u16().unwrap().into();
 
@@ -672,15 +735,7 @@ impl Question {
     fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
 
-        for label in self.name.split(".") {
-            if label == "" {
-                bytes.push(0);
-                break;
-            }
-            bytes.push(label.len() as u8);
-            bytes.extend(label.as_bytes());
-        }
-
+        bytes.extend(self.name.to_bytes());
         bytes.extend(u16::from(self.q_type.clone()).to_be_bytes());
         bytes.extend(u16::from(self.q_class.clone()).to_be_bytes());
 
@@ -748,7 +803,7 @@ impl<'a> Bytes<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::Zone;
+    use crate::{Name, Zone};
 
     #[test]
     fn parse_toml() {
@@ -762,6 +817,6 @@ mod tests {
         "#;
 
         let zone: Zone = Zone::from_toml(input).unwrap();
-        assert_eq!(zone.records[0].name(), "example.com.")
+        assert_eq!(zone.records[0].name(), &Name::from_str("example.com."))
     }
 }
