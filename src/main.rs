@@ -44,26 +44,30 @@ impl Server {
     ///
     /// Returns a DNS response.
     fn serve(&self, query: Message) -> Message {
-        let question = &query.questions[0];
-        println!("question: {} {:?}", question.name, question.q_type);
-
         let mut response = query;
         response.header.is_response = true;
-        match self
+
+        let question = &response.questions[0];
+        println!("question: {} {:?}", question.name, question.q_type);
+
+        let matched_records: Vec<&_> = self
             .zone
             .records
             .iter()
-            .find(|r| r.name() == &response.questions[0].name)
-        {
-            Some(record) => {
-                response.header.is_authority = true;
-                response.header.resp_code = ResponseCode::Success;
-                response.header.answer_count = 1;
+            .filter(|r| r.name() == &question.name)
+            .filter(|r| r.code() == question.q_type.code())
+            .collect();
+
+        if matched_records.len() > 0 {
+            response.header.is_authority = true;
+            response.header.resp_code = ResponseCode::Success;
+            response.header.answer_count = matched_records.len() as u16;
+            for record in matched_records {
                 response.answer_records.push(record.clone());
             }
-            None => {
-                response.header.resp_code = ResponseCode::NameError;
-            }
+        } else {
+            // @todo: look for ns records
+            response.header.resp_code = ResponseCode::NameError;
         }
 
         println!("response: {:?}", response.header.resp_code);
@@ -715,6 +719,13 @@ enum QuestionType {
     MAILA,
     /// A request for all records
     ALL,
+}
+
+impl QuestionType {
+    /// Returns the code for this type.
+    fn code(&self) -> u16 {
+        self.clone().into()
+    }
 }
 
 impl From<u16> for QuestionType {

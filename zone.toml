@@ -6,3 +6,10 @@ class = "IN"
 ttl = 60
 type = "A"
 addr = "192.158.1.38"
+
+[[records]]
+name = "example.com."
+class = "IN"
+ttl = 60
+type = "A"
+addr = "102.210.5.22"
