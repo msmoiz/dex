@@ -79,7 +79,10 @@ impl Server {
                 // check for exact matches
                 let matched_records: Vec<_> = name_records
                     .iter()
-                    .filter(|r| r.code() == question.q_type.code())
+                    .filter(|r| {
+                        r.code() == question.q_type.code()
+                            || matches!(question.q_type, QuestionType::ALL)
+                    })
                     .collect();
 
                 if !matched_records.is_empty() {
