@@ -36,6 +36,7 @@ impl Server {
             let mut q_bytes = Bytes::from_buf(&q_buf);
             let query = Message::from_bytes(&mut q_bytes);
             let response = server.serve(query);
+            println!("response: {:?}", response.header.resp_code);
             let r_bytes = response.to_bytes();
             socket.send_to(&r_bytes, addr).unwrap();
             println!("returned response to sender");
@@ -58,44 +59,58 @@ impl Server {
             return response;
         }
 
-        let matched_records: Vec<&_> = self
-            .zone
-            .records
-            .iter()
-            .filter(|r| r.name() == &question.name)
-            .filter(|r| r.code() == question.q_type.code())
-            .collect();
+        for qname in question.name.ancestors() {
+            let name_records = self.zone.find_with_name(&qname);
 
-        if matched_records.len() > 0 {
-            response.header.is_authority = true;
-            response.header.resp_code = ResponseCode::Success;
-            response.header.answer_count = matched_records.len() as u16;
-            for record in matched_records {
-                response.answer_records.push(record.clone());
+            // leaf
+            if qname == question.name {
+                // check for cname
+                if let Some(cname_record) = name_records
+                    .iter()
+                    .find(|r| matches!(r, Record::Cname { .. }))
+                {
+                    response.header.is_authority = true;
+                    response.header.resp_code = ResponseCode::Success;
+                    response.header.answer_count = 1;
+                    response.answer_records.push((*cname_record).clone());
+                    return response;
+                }
+
+                // check for exact matches
+                let matched_records: Vec<_> = name_records
+                    .iter()
+                    .filter(|r| r.code() == question.q_type.code())
+                    .collect();
+
+                if !matched_records.is_empty() {
+                    response.header.is_authority = true;
+                    response.header.resp_code = ResponseCode::Success;
+                    response.header.answer_count = matched_records.len() as u16;
+                    for record in matched_records {
+                        response.answer_records.push((*record).clone());
+                    }
+                    return response;
+                }
             }
-        } else {
-            let ns_records: Vec<&_> = self
-                .zone
-                .records
+
+            // leaf or ancestor: check for delegation
+            let delegation_records: Vec<_> = name_records
                 .iter()
                 .filter(|r| matches!(r, Record::Ns { .. }))
-                .filter(|r| r.name() != &self.zone.name)
-                .filter(|r| r.name().contains(&question.name))
                 .collect();
 
-            if ns_records.len() > 0 {
-                response.header.is_authority = true;
+            if !delegation_records.is_empty() {
+                response.header.is_authority = false;
                 response.header.resp_code = ResponseCode::Success;
-                response.header.authority_count = ns_records.len() as u16;
-                for record in ns_records {
-                    response.authority_records.push(record.clone());
+                response.header.authority_count = delegation_records.len() as u16;
+                for record in delegation_records {
+                    response.authority_records.push((*record).clone());
                 }
-            } else {
-                response.header.resp_code = ResponseCode::NameError;
+                return response;
             }
         }
 
-        println!("response: {:?}", response.header.resp_code);
+        response.header.resp_code = ResponseCode::NameError;
         response
     }
 }
@@ -224,6 +239,14 @@ impl Name {
         }
         bytes
     }
+
+    /// Returns an iterator over the ancestors of this name.
+    ///
+    /// Ancestors are returned in ascending order based on length. The last
+    /// element returned is the full name.
+    fn ancestors(&self) -> Ancestors {
+        Ancestors::new(self)
+    }
 }
 
 impl Display for Name {
@@ -279,6 +302,36 @@ impl<'de> Deserialize<'de> for Name {
         }
 
         deserializer.deserialize_str(NameVisitor)
+    }
+}
+
+/// Iterator over the ancestors of a name.
+struct Ancestors<'a> {
+    name: &'a Name,
+    pos: usize,
+}
+
+impl<'a> Ancestors<'a> {
+    fn new(name: &'a Name) -> Self {
+        Self { name, pos: 1 }
+    }
+}
+
+impl<'a> Iterator for Ancestors<'a> {
+    type Item = Name;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let len = self.name.labels.len();
+
+        if self.pos > len {
+            return None;
+        }
+
+        let ancestor = &self.name.labels[len - self.pos..];
+        let ancestor: Vec<_> = ancestor.iter().cloned().collect();
+        self.pos += 1;
+
+        Some(Name::from_labels(ancestor))
     }
 }
 
@@ -1024,6 +1077,11 @@ impl Zone {
         let zone = toml::from_str(input)?;
         Ok(zone)
     }
+
+    /// Returns records with the specified name.
+    fn find_with_name(&self, name: &Name) -> Vec<&Record> {
+        self.records.iter().filter(|r| r.name() == name).collect()
+    }
 }
 
 /// A DNS message.
@@ -1543,5 +1601,14 @@ mod tests {
 
         let zone: Zone = Zone::from_toml(input).unwrap();
         assert_eq!(zone.records[0].name(), &Name::from_str("example.com."))
+    }
+
+    #[test]
+    fn ancestors_iterate() {
+        let name = Name::from_str("example.com.");
+        let mut ancestors = name.ancestors();
+        assert_eq!(ancestors.next(), Some(Name::from_str("")));
+        assert_eq!(ancestors.next(), Some(Name::from_str("com.")));
+        assert_eq!(ancestors.next(), Some(Name::from_str("example.com.")));
     }
 }
