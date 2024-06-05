@@ -203,13 +203,37 @@ impl Name {
     fn from_bytes(bytes: &mut Bytes) -> Self {
         let mut labels = vec![];
 
+        let mut restore: Option<usize> = None;
+        let mut max = bytes.pos();
         loop {
-            let label = Label::from_bytes(bytes);
-            let is_root = label.len() == 0;
-            labels.push(label);
-            if is_root {
-                break;
+            let signal = bytes.peek().unwrap();
+            let is_ptr = (signal >> 6 & 3) == 3;
+            if is_ptr {
+                let ptr = bytes.read_u16().unwrap();
+                let offset = ptr & 0b0011_1111_1111_1111;
+
+                if offset as usize >= max {
+                    panic!("detected pointer loop")
+                }
+
+                if restore.is_none() {
+                    restore = Some(bytes.pos);
+                }
+
+                bytes.seek(offset as usize);
+                max = offset as usize;
+            } else {
+                let label = Label::from_bytes(bytes);
+                let is_root = label.len() == 0;
+                labels.push(label);
+                if is_root {
+                    break;
+                }
             }
+        }
+
+        if let Some(restore) = restore {
+            bytes.seek(restore);
         }
 
         Self::from_labels(labels)
@@ -1596,6 +1620,11 @@ impl Bytes {
         &self.buf[self.pos..]
     }
 
+    /// Seeks to a position in the buffer.
+    fn seek(&mut self, pos: usize) {
+        self.pos = pos;
+    }
+
     /// Reads the next byte from the buffer.
     ///
     /// Returns None if the end of the buffer has been reached.
@@ -1605,6 +1634,17 @@ impl Bytes {
         }
         let byte = self.remainder()[0];
         self.pos += 1;
+        Some(byte)
+    }
+
+    /// Reads the next byte from the buffer without advancing the position.
+    ///
+    /// Returns None if the end of the buffer has been reached.
+    fn peek(&mut self) -> Option<u8> {
+        if self.remainder().len() == 0 {
+            return None;
+        }
+        let byte = self.remainder()[0];
         Some(byte)
     }
 
