@@ -30,15 +30,20 @@ impl Server {
         println!("listening on port 5380");
         let socket = std::net::UdpSocket::bind("0.0.0.0:5380").unwrap();
         loop {
-            let mut q_buf = [0; 512];
-            let (_, addr) = socket.recv_from(&mut q_buf).unwrap();
+            let mut query_buffer = [0; 512];
+            let (_, addr) = socket.recv_from(&mut query_buffer).unwrap();
             println!("received query from {addr}");
-            let mut q_bytes = Bytes::from_buf(&q_buf);
-            let query = Message::from_bytes(&mut q_bytes);
+
+            let mut query_bytes = Bytes::from_buf(query_buffer);
+            let query = Message::from_bytes(&mut query_bytes);
+
             let response = server.serve(query);
             println!("response: {:?}", response.header.resp_code);
-            let r_bytes = response.to_bytes();
-            socket.send_to(&r_bytes, addr).unwrap();
+
+            let mut response_bytes = Bytes::new();
+            response.to_bytes(&mut response_bytes);
+            socket.send_to(response_bytes.used(), addr).unwrap();
+
             println!("returned response to sender");
         }
     }
@@ -148,11 +153,9 @@ impl Label {
     }
 
     /// Converts a Label to a byte stream.
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-        bytes.push(self.0.len() as u8);
-        bytes.extend(self.0.as_bytes());
-        bytes
+    fn to_bytes(&self, bytes: &mut Bytes) {
+        bytes.write(self.0.len() as u8);
+        bytes.write_all(self.0.as_bytes());
     }
 
     /// Returns the length of the label.
@@ -235,12 +238,10 @@ impl Name {
     }
 
     /// Converts a Name to a byte stream.
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
+    fn to_bytes(&self, bytes: &mut Bytes) {
         for label in &self.labels {
-            bytes.extend(label.to_bytes());
+            label.to_bytes(bytes);
         }
-        bytes
     }
 
     /// Returns an iterator over the ancestors of this name.
@@ -801,38 +802,52 @@ impl Record {
     }
 
     /// Converts a Record to a byte stream.
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-
-        bytes.extend(self.name().to_bytes());
-        bytes.extend(self.code().to_be_bytes());
-        bytes.extend(u16::from(self.class()).to_be_bytes());
-        bytes.extend(self.ttl().to_be_bytes());
+    fn to_bytes(&self, bytes: &mut Bytes) {
+        self.name().to_bytes(bytes);
+        bytes.write_u16(self.code());
+        bytes.write_u16(u16::from(self.class()));
+        bytes.write_u32(self.ttl());
 
         match self {
             Record::A { addr, .. } => {
-                bytes.extend((4 as u16).to_be_bytes());
-                bytes.extend(addr.octets());
+                bytes.write_u16(4);
+                bytes.write_all(&addr.octets());
             }
             Record::Ns { host, .. } => {
-                let host = host.to_bytes();
-                bytes.extend((host.len() as u16).to_be_bytes());
-                bytes.extend(host);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                host.to_bytes(bytes);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Md { host, .. } => {
-                let host = host.to_bytes();
-                bytes.extend((host.len() as u16).to_be_bytes());
-                bytes.extend(host);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                host.to_bytes(bytes);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Mf { host, .. } => {
-                let host = host.to_bytes();
-                bytes.extend((host.len() as u16).to_be_bytes());
-                bytes.extend(host);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                host.to_bytes(bytes);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Cname { host, .. } => {
-                let host = host.to_bytes();
-                bytes.extend((host.len() as u16).to_be_bytes());
-                bytes.extend(host);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                host.to_bytes(bytes);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Soa {
                 origin,
@@ -844,36 +859,50 @@ impl Record {
                 minimum,
                 ..
             } => {
-                let origin = origin.to_bytes();
-                let mailbox = mailbox.to_bytes();
-                let rd_len = (4 * 5) + origin.len() + mailbox.len();
-                bytes.extend((rd_len as u16).to_be_bytes());
-                bytes.extend(origin);
-                bytes.extend(mailbox);
-                bytes.extend(version.to_be_bytes());
-                bytes.extend(refresh.to_be_bytes());
-                bytes.extend(retry.to_be_bytes());
-                bytes.extend(expire.to_be_bytes());
-                bytes.extend(minimum.to_be_bytes());
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                origin.to_bytes(bytes);
+                mailbox.to_bytes(bytes);
+                bytes.write_u32(*version);
+                bytes.write_u32(*refresh);
+                bytes.write_u32(*retry);
+                bytes.write_u32(*expire);
+                bytes.write_u32(*minimum);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Mb { host, .. } => {
-                let host = host.to_bytes();
-                bytes.extend((host.len() as u16).to_be_bytes());
-                bytes.extend(host);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                host.to_bytes(bytes);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Mg { host, .. } => {
-                let host = host.to_bytes();
-                bytes.extend((host.len() as u16).to_be_bytes());
-                bytes.extend(host);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                host.to_bytes(bytes);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Mr { host, .. } => {
-                let host = host.to_bytes();
-                bytes.extend((host.len() as u16).to_be_bytes());
-                bytes.extend(host);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                host.to_bytes(bytes);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Null { data, .. } => {
-                bytes.extend((data.len() as u16).to_be_bytes());
-                bytes.extend(data);
+                bytes.write_u16(data.len() as u16);
+                bytes.write_all(data);
             }
             Record::Wks {
                 addr,
@@ -881,63 +910,80 @@ impl Record {
                 data,
                 ..
             } => {
-                let rd_len = 4 + 1 + data.len();
-                bytes.extend((rd_len as u16).to_be_bytes());
-                bytes.extend(addr.octets());
-                bytes.push(*protocol);
-                bytes.extend(data);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                bytes.write_all(&addr.octets());
+                bytes.write(*protocol);
+                bytes.write_all(data);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Ptr { host, .. } => {
-                let host = host.to_bytes();
-                bytes.extend((host.len() as u16).to_be_bytes());
-                bytes.extend(host);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                host.to_bytes(bytes);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Hinfo { cpu, os, .. } => {
-                let cpu = cpu.as_bytes();
-                let os = os.as_bytes();
-                let rd_len = 1 + cpu.len() + 1 + os.len();
-                bytes.extend((rd_len as u16).to_be_bytes());
-                bytes.push(cpu.len() as u8);
-                bytes.extend(cpu);
-                bytes.push(os.len() as u8);
-                bytes.extend(os);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                bytes.write(cpu.len() as u8);
+                bytes.write_all(cpu.as_bytes());
+                bytes.write(os.len() as u8);
+                bytes.write_all(os.as_bytes());
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Minfo {
                 r_mailbox,
                 e_mailbox,
                 ..
             } => {
-                let r_mailbox = r_mailbox.to_bytes();
-                let e_mailbox = e_mailbox.to_bytes();
-                let rd_len = r_mailbox.len() + e_mailbox.len();
-                bytes.extend((rd_len as u16).to_be_bytes());
-                bytes.extend(r_mailbox);
-                bytes.extend(e_mailbox);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                r_mailbox.to_bytes(bytes);
+                e_mailbox.to_bytes(bytes);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Mx { priority, host, .. } => {
-                let host = host.to_bytes();
-                let rd_len = 2 + host.len();
-                bytes.extend((rd_len as u16).to_be_bytes());
-                bytes.extend(priority.to_be_bytes());
-                bytes.extend(host);
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
+                bytes.write_u16(*priority);
+                host.to_bytes(bytes);
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Txt { content, .. } => {
+                let pos = bytes.pos();
+                bytes.write_u16(0);
+
                 let bytez = content.as_bytes();
                 let chunks = bytez.chunks(255);
-                let rd_len = bytez.len() + chunks.len();
-                bytes.extend((rd_len as u16).to_be_bytes());
                 for chunk in chunks {
-                    bytes.push(chunk.len() as u8);
-                    bytes.extend(chunk);
+                    bytes.write(chunk.len() as u8);
+                    bytes.write_all(chunk);
                 }
+
+                let size = bytes.pos() - (pos + 2);
+                bytes.set_u16(pos, size as u16);
             }
             Record::Aaaa { addr, .. } => {
-                bytes.extend((16 as u16).to_be_bytes());
-                bytes.extend(addr.octets());
+                bytes.write_u16(16);
+                bytes.write_all(&addr.octets());
             }
         }
-
-        bytes
     }
 }
 
@@ -1128,28 +1174,24 @@ impl Message {
     }
 
     /// Converts a Message to a byte stream.
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-
-        bytes.extend(self.header.to_bytes());
+    fn to_bytes(&self, bytes: &mut Bytes) {
+        self.header.to_bytes(bytes);
 
         for question in &self.questions {
-            bytes.extend(question.to_bytes());
+            question.to_bytes(bytes);
         }
 
         for record in &self.answer_records {
-            bytes.extend(record.to_bytes());
+            record.to_bytes(bytes);
         }
 
         for record in &self.authority_records {
-            bytes.extend(record.to_bytes());
+            record.to_bytes(bytes);
         }
 
         for record in &self.additional_records {
-            bytes.extend(record.to_bytes());
+            record.to_bytes(bytes);
         }
-
-        bytes
     }
 }
 
@@ -1305,10 +1347,8 @@ impl Header {
     }
 
     /// Converts a Header to a byte stream.
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-
-        bytes.extend(self.id.to_be_bytes());
+    fn to_bytes(&self, bytes: &mut Bytes) {
+        bytes.write_u16(self.id);
 
         let codes1 = {
             let mut byte = 0000_0000;
@@ -1319,7 +1359,7 @@ impl Header {
             byte |= (self.recursion_desired as u8) << 0;
             byte
         };
-        bytes.push(codes1);
+        bytes.write(codes1);
 
         let codes2 = {
             let mut byte = 0;
@@ -1327,14 +1367,12 @@ impl Header {
             byte |= u8::from(self.resp_code.clone());
             byte
         };
-        bytes.push(codes2);
+        bytes.write(codes2);
 
-        bytes.extend(self.question_count.to_be_bytes());
-        bytes.extend(self.answer_count.to_be_bytes());
-        bytes.extend(self.authority_count.to_be_bytes());
-        bytes.extend(self.additional_count.to_be_bytes());
-
-        bytes
+        bytes.write_u16(self.question_count);
+        bytes.write_u16(self.answer_count);
+        bytes.write_u16(self.authority_count);
+        bytes.write_u16(self.additional_count);
     }
 }
 
@@ -1516,30 +1554,44 @@ impl Question {
     }
 
     /// Converts a Question to a byte stream.
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-
-        bytes.extend(self.name.to_bytes());
-        bytes.extend(u16::from(self.q_type.clone()).to_be_bytes());
-        bytes.extend(u16::from(self.q_class.clone()).to_be_bytes());
-
-        bytes
+    fn to_bytes(&self, bytes: &mut Bytes) {
+        self.name.to_bytes(bytes);
+        bytes.write_u16(u16::from(self.q_type.clone()));
+        bytes.write_u16(u16::from(self.q_class.clone()));
     }
 }
 
-/// An iterator over a byte buffer.
-struct Bytes<'a> {
-    buf: &'a [u8],
+/// A byte stream.
+struct Bytes {
+    buf: [u8; 512],
     pos: usize,
 }
 
-impl<'a> Bytes<'a> {
-    /// Creates a new Bytes iterator.
-    fn from_buf(buf: &'a [u8]) -> Self {
+impl Bytes {
+    /// Creates a new Bytes iterator with an empty buffer.
+    fn new() -> Self {
+        Self {
+            buf: [0; 512],
+            pos: 0,
+        }
+    }
+
+    /// Creates a new Bytes iterator from a buffer.
+    fn from_buf(buf: [u8; 512]) -> Self {
         Self { buf, pos: 0 }
     }
 
-    /// Returns a slice that represents the unread bytes.
+    /// Returns the current position in the buffer.
+    fn pos(&self) -> usize {
+        self.pos
+    }
+
+    /// Returns a slice that represents the read (or written) bytes.
+    fn used(&self) -> &[u8] {
+        &self.buf[..self.pos]
+    }
+
+    /// Returns a slice that represents the unread (or unwritten) bytes.
     fn remainder(&self) -> &[u8] {
         &self.buf[self.pos..]
     }
@@ -1582,6 +1634,51 @@ impl<'a> Bytes<'a> {
     fn read_u32(&mut self) -> Option<u32> {
         self.read_exact(4)
             .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()))
+    }
+
+    /// Writes a byte to the buffer.
+    fn write(&mut self, byte: u8) {
+        self.buf[self.pos] = byte;
+        self.pos += 1;
+    }
+
+    /// Writes multiple bytes to the buffer.
+    fn write_all(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.write(*byte);
+        }
+    }
+
+    /// Writes a u16 to the buffer.
+    fn write_u16(&mut self, num: u16) {
+        self.write_all(&num.to_be_bytes());
+    }
+
+    /// Writes a u32 to the buffer.
+    fn write_u32(&mut self, num: u32) {
+        self.write_all(&num.to_be_bytes());
+    }
+
+    /// Sets a byte in the buffer at a specific position.
+    fn set(&mut self, pos: usize, byte: u8) {
+        self.buf[pos] = byte;
+    }
+
+    /// Sets multiple bytes in the buffer starting at a specific position.
+    fn set_all(&mut self, pos: usize, bytes: &[u8]) {
+        for (i, byte) in bytes.iter().enumerate() {
+            self.set(pos + i, *byte);
+        }
+    }
+
+    /// Sets a u16 in the buffer at a specific position.
+    fn set_u16(&mut self, pos: usize, num: u16) {
+        self.set_all(pos, &num.to_be_bytes());
+    }
+
+    /// Sets a u32 in the buffer at a specific position.
+    fn set_u32(&mut self, pos: usize, num: u32) {
+        self.set_all(pos, &num.to_be_bytes());
     }
 }
 
