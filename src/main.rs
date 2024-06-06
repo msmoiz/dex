@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::Display,
     fs,
     net::{Ipv4Addr, Ipv6Addr},
@@ -263,9 +264,40 @@ impl Name {
 
     /// Converts a Name to a byte stream.
     fn to_bytes(&self, bytes: &mut Bytes) {
-        for label in &self.labels {
-            label.to_bytes(bytes);
+        for suffix in self.suffixes() {
+            let start_pos = bytes.pos();
+
+            if suffix.is_root() {
+                suffix.labels[0].to_bytes(bytes);
+                break;
+            }
+
+            match bytes.find_first_occ(&suffix) {
+                Some(offset) => {
+                    let mut ptr = 0b1100_0000_0000_0000;
+                    ptr |= offset as u16;
+                    bytes.write_u16(ptr);
+                    break;
+                }
+                None => {
+                    bytes.set_first_occ(&suffix, start_pos);
+                    suffix.labels[0].to_bytes(bytes);
+                }
+            }
         }
+    }
+
+    /// Returns true if this name represents the root name.
+    fn is_root(&self) -> bool {
+        self.labels.len() == 1
+    }
+
+    /// Returns an iterator over the suffixes of this name.
+    ///
+    /// Suffixes are returned in descending order based on length. The last
+    /// element returned is the root name.
+    fn suffixes(&self) -> Suffixes {
+        Suffixes::new(self)
     }
 
     /// Returns an iterator over the ancestors of this name.
@@ -330,6 +362,36 @@ impl<'de> Deserialize<'de> for Name {
         }
 
         deserializer.deserialize_str(NameVisitor)
+    }
+}
+
+/// Iterator over the suffixes of a name.
+struct Suffixes<'a> {
+    name: &'a Name,
+    pos: usize,
+}
+
+impl<'a> Suffixes<'a> {
+    fn new(name: &'a Name) -> Self {
+        Self { name, pos: 0 }
+    }
+}
+
+impl<'a> Iterator for Suffixes<'a> {
+    type Item = Name;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let len = self.name.labels.len();
+
+        if self.pos > len {
+            return None;
+        }
+
+        let suffix = &self.name.labels[self.pos..];
+        let suffix: Vec<_> = suffix.iter().cloned().collect();
+        self.pos += 1;
+
+        Some(Name::from_labels(suffix))
     }
 }
 
@@ -1589,6 +1651,10 @@ impl Question {
 struct Bytes {
     buf: [u8; 512],
     pos: usize,
+    /// Map of offsets to the first occurrence of a name in the buffer.
+    ///
+    /// Used during writing to compress serialized names using pointers.
+    occs: HashMap<String, usize>,
 }
 
 impl Bytes {
@@ -1597,12 +1663,17 @@ impl Bytes {
         Self {
             buf: [0; 512],
             pos: 0,
+            occs: HashMap::new(),
         }
     }
 
     /// Creates a new Bytes iterator from a buffer.
     fn from_buf(buf: [u8; 512]) -> Self {
-        Self { buf, pos: 0 }
+        Self {
+            buf,
+            pos: 0,
+            occs: HashMap::new(),
+        }
     }
 
     /// Returns the current position in the buffer.
@@ -1719,6 +1790,20 @@ impl Bytes {
     /// Sets a u32 in the buffer at a specific position.
     fn set_u32(&mut self, pos: usize, num: u32) {
         self.set_all(pos, &num.to_be_bytes());
+    }
+
+    /// Finds the offset to the first occurrence of a name in the buffer.
+    ///
+    /// Returns None if the name has not occurred.
+    fn find_first_occ(&self, name: &Name) -> Option<usize> {
+        let s = name.to_string();
+        self.occs.get(&s).copied()
+    }
+
+    /// Sets the offset to the first occurrence of a name in the buffer.
+    fn set_first_occ(&mut self, name: &Name, pos: usize) {
+        let s = name.to_string();
+        self.occs.insert(s, pos);
     }
 }
 
