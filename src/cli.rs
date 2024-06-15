@@ -1,3 +1,5 @@
+use std::fs;
+
 use clap::Parser;
 use rolodex::{Bytes, Message, Name, Question, QuestionClass, ResponseCode};
 
@@ -17,11 +19,17 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
+    let domain = to_fqdn(cli.domain);
+
+    if Hosts::contains(&domain) {
+        eprintln!("warning: {} is present in hosts file", domain);
+    }
+
     let mut query = Message::new();
     query.header.recursion_desired = true;
     query.header.question_count = 1;
     query.questions = vec![Question {
-        name: Name::from_str(&to_fqdn(cli.domain)),
+        name: Name::from_str(&domain),
         q_type: cli.record_type.parse().unwrap(),
         q_class: QuestionClass::In,
     }];
@@ -57,4 +65,42 @@ fn to_fqdn(mut domain: String) -> String {
         domain.push('.')
     }
     domain
+}
+
+/// Represents the hosts file found on most operating systems.
+struct Hosts;
+
+impl Hosts {
+    /// Returns true if the hosts file contains the given host.
+    fn contains(host: &str) -> bool {
+        let content = fs::read_to_string("/etc/hosts").unwrap();
+        Self::contains_inner(&content, host)
+    }
+
+    fn contains_inner(input: &str, host: &str) -> bool {
+        for line in input.lines() {
+            if line.starts_with("#") || line.trim().is_empty() {
+                continue;
+            }
+            let mut parts = line.split_whitespace();
+            while let Some(in_host) = parts.next() {
+                if in_host == host || to_fqdn(in_host.to_owned()) == host {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Hosts;
+
+    #[test]
+    fn hosts_contains() {
+        let input = "127.0.0.1 localhost";
+        let contains = Hosts::contains_inner(input, "localhost");
+        assert!(contains);
+    }
 }
