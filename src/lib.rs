@@ -1,7 +1,9 @@
 use std::{
     collections::HashMap,
+    convert::Infallible,
     fmt::Display,
     net::{Ipv4Addr, Ipv6Addr},
+    str::FromStr,
 };
 
 use anyhow::Result;
@@ -1674,6 +1676,40 @@ impl From<QuestionType> for u16 {
             MAILA => 254,
             ALL => 255,
         }
+    }
+}
+
+impl FromStr for QuestionType {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        use QuestionType::*;
+
+        let qtype = match s {
+            "A" => A,
+            "NS" => NS,
+            "MD" => MD,
+            "MF" => MF,
+            "CNAME" => CNAME,
+            "SOA" => SOA,
+            "MB" => MB,
+            "MG" => MG,
+            "MR" => MR,
+            "NULL" => NULL,
+            "WKS" => WKS,
+            "PTR" => PTR,
+            "HINFO" => HINFO,
+            "MINFO" => MINFO,
+            "MX" => MX,
+            "TXT" => TXT,
+            "AXFR" => AXFR,
+            "MAILB" => MAILB,
+            "MAILA" => MAILA,
+            "ALL" => ALL,
+            _ => panic!("unsupported qtype: {s}"),
+        };
+
+        Ok(qtype)
     }
 }
 

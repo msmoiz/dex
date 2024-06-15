@@ -1,11 +1,14 @@
 use clap::Parser;
-use rolodex::{Bytes, Message, Name, Question, QuestionClass, QuestionType, ResponseCode};
+use rolodex::{Bytes, Message, Name, Question, QuestionClass, ResponseCode};
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
 struct Cli {
     /// The domain to find records for.
     domain: String,
+    /// The type of record to search for.
+    #[clap(default_value_t=String::from("A"))]
+    record_type: String,
 }
 
 fn main() {
@@ -16,7 +19,7 @@ fn main() {
     query.header.question_count = 1;
     query.questions = vec![Question {
         name: Name::from_str(&cli.domain),
-        q_type: QuestionType::A,
+        q_type: cli.record_type.parse().unwrap(),
         q_class: QuestionClass::In,
     }];
 
