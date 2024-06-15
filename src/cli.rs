@@ -10,7 +10,7 @@ struct Cli {
     /// Example: example.com -> example.com.
     domain: String,
     /// The type of record to search for.
-    #[clap(default_value_t=String::from("A"))]
+    #[clap(value_name="TYPE", default_value_t=String::from("A"))]
     record_type: String,
 }
 
