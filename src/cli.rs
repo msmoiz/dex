@@ -4,8 +4,8 @@ use rolodex::{Bytes, Message, Name, Question, QuestionClass, QuestionType, Respo
 #[derive(Parser, Debug)]
 #[command(version, about)]
 struct Cli {
-    /// Name to find records for.
-    name: String,
+    /// The domain to find records for.
+    domain: String,
 }
 
 fn main() {
@@ -15,7 +15,7 @@ fn main() {
     query.header.recursion_desired = true;
     query.header.question_count = 1;
     query.questions = vec![Question {
-        name: Name::from_str(&cli.name),
+        name: Name::from_str(&cli.domain),
         q_type: QuestionType::A,
         q_class: QuestionClass::In,
     }];
