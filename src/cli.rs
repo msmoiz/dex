@@ -20,7 +20,7 @@ fn main() {
         q_class: QuestionClass::In,
     }];
 
-    let socket = std::net::UdpSocket::bind("0.0.0.0:5380").unwrap();
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
 
     let mut query_bytes = Bytes::new();
     query.to_bytes(&mut query_bytes);
