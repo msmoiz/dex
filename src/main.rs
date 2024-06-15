@@ -65,8 +65,15 @@ impl Server {
             return response;
         }
 
+        let mut wildcard_answers: Option<Vec<&Record>> = None;
+
         for qname in question.name.ancestors() {
             let name_records = self.zone.find_with_name(&qname);
+
+            // if there are records at this level, discard wildcard answers
+            if !name_records.is_empty() {
+                wildcard_answers = None;
+            }
 
             // leaf
             if qname == question.name {
@@ -117,6 +124,43 @@ impl Server {
                 }
                 return response;
             }
+
+            // do not consider wildcards for root
+            if qname.is_root() {
+                continue;
+            }
+
+            // if there are records at this level, do not look for wildcard answers
+            if !name_records.is_empty() {
+                continue;
+            }
+
+            // leaf or ancestor: check for wildcards
+            let wildcard_records: Vec<_> = self
+                .zone
+                .find_with_name(&qname.to_wildcard())
+                .into_iter()
+                .filter(|r| r.code() == question.q_type.code())
+                .collect();
+
+            // if there are matching wildcard records, hang on to them
+            if !wildcard_records.is_empty() {
+                wildcard_answers = Some(wildcard_records);
+            }
+        }
+
+        // there are matching wildcard records and no records for names in
+        // between the wildcard and the question name
+        if let Some(records) = wildcard_answers {
+            response.header.is_authority = true;
+            response.header.resp_code = ResponseCode::Success;
+            response.header.answer_count = records.len() as u16;
+            for record in records {
+                response
+                    .answer_records
+                    .push(record.with_name(question.name.clone()));
+            }
+            return response;
         }
 
         response.header.resp_code = ResponseCode::NameError;
@@ -137,7 +181,7 @@ impl Label {
 
         lazy_static! {
             static ref RE: Regex =
-                Regex::new("^[[:alpha:]]([[:alpha:]0-9-]*[[:alpha:]0-9])?$").unwrap();
+                Regex::new("^*|[[:alpha:]]([[:alpha:]0-9-]*[[:alpha:]0-9])?$").unwrap();
         }
 
         assert!(text.is_empty() || RE.is_match(text));
@@ -187,8 +231,11 @@ impl Name {
         };
 
         assert_eq!(last.0, "");
-        for label in rest {
+        for (i, label) in rest.iter().enumerate() {
             assert_ne!(label.0, "");
+            if i != 0 {
+                assert_ne!(label.0, "*");
+            }
         }
 
         Self { labels }
@@ -306,6 +353,16 @@ impl Name {
     /// element returned is the full name.
     fn ancestors(&self) -> Ancestors {
         Ancestors::new(self)
+    }
+
+    /// Returns a copy of the Name with the first label replaced with a
+    /// wildcard.
+    fn to_wildcard(&self) -> Name {
+        let labels = std::iter::once("*".to_owned())
+            .chain(self.labels.iter().map(|l| l.0.clone()).skip(1))
+            .collect::<Vec<_>>()
+            .join(".");
+        Self::from_str(&labels)
     }
 }
 
@@ -791,6 +848,188 @@ impl Record {
                 }
             }
             _ => panic!("unsupported record type: {r_type}"),
+        }
+    }
+
+    ///
+    fn with_name(&self, name: Name) -> Self {
+        match self.clone() {
+            Record::A {
+                class, ttl, addr, ..
+            } => Record::A {
+                name,
+                class,
+                ttl,
+                addr,
+            },
+            Record::Ns {
+                class, ttl, host, ..
+            } => Record::Ns {
+                name,
+                class,
+                ttl,
+                host,
+            },
+            Record::Md {
+                class, ttl, host, ..
+            } => Record::Md {
+                name,
+                class,
+                ttl,
+                host,
+            },
+            Record::Mf {
+                class, ttl, host, ..
+            } => Record::Mf {
+                name,
+                class,
+                ttl,
+                host,
+            },
+            Record::Cname {
+                class, ttl, host, ..
+            } => Record::Cname {
+                name,
+                class,
+                ttl,
+                host,
+            },
+            Record::Soa {
+                class,
+                ttl,
+                origin,
+                mailbox,
+                version,
+                refresh,
+                retry,
+                expire,
+                minimum,
+                ..
+            } => Record::Soa {
+                name,
+                class,
+                ttl,
+                origin,
+                mailbox,
+                version,
+                refresh,
+                retry,
+                expire,
+                minimum,
+            },
+            Record::Mb {
+                class, ttl, host, ..
+            } => Record::Mb {
+                name,
+                class,
+                ttl,
+                host,
+            },
+            Record::Mg {
+                class, ttl, host, ..
+            } => Record::Mg {
+                name,
+                class,
+                ttl,
+                host,
+            },
+            Record::Mr {
+                class, ttl, host, ..
+            } => Record::Mr {
+                name,
+                class,
+                ttl,
+                host,
+            },
+            Record::Null {
+                class, ttl, data, ..
+            } => Record::Null {
+                name,
+                class,
+                ttl,
+                data,
+            },
+            Record::Wks {
+                class,
+                ttl,
+                addr,
+                protocol,
+                data,
+                ..
+            } => Record::Wks {
+                name,
+                class,
+                ttl,
+                addr,
+                protocol,
+                data,
+            },
+            Record::Ptr {
+                class, ttl, host, ..
+            } => Record::Ptr {
+                name,
+                class,
+                ttl,
+                host,
+            },
+            Record::Hinfo {
+                class,
+                ttl,
+                cpu,
+                os,
+                ..
+            } => Record::Hinfo {
+                name,
+                class,
+                ttl,
+                cpu,
+                os,
+            },
+            Record::Minfo {
+                class,
+                ttl,
+                r_mailbox,
+                e_mailbox,
+                ..
+            } => Record::Minfo {
+                name,
+                class,
+                ttl,
+                r_mailbox,
+                e_mailbox,
+            },
+            Record::Mx {
+                class,
+                ttl,
+                priority,
+                host,
+                ..
+            } => Record::Mx {
+                name,
+                class,
+                ttl,
+                priority,
+                host,
+            },
+            Record::Txt {
+                class,
+                ttl,
+                content,
+                ..
+            } => Record::Txt {
+                name,
+                class,
+                ttl,
+                content,
+            },
+            Record::Aaaa {
+                class, ttl, addr, ..
+            } => Record::Aaaa {
+                name,
+                class,
+                ttl,
+                addr,
+            },
         }
     }
 
@@ -1835,5 +2074,12 @@ mod tests {
         assert_eq!(ancestors.next(), Some(Name::from_str("")));
         assert_eq!(ancestors.next(), Some(Name::from_str("com.")));
         assert_eq!(ancestors.next(), Some(Name::from_str("example.com.")));
+    }
+
+    #[test]
+    fn name_to_wildcard() {
+        let name = Name::from_str("example.com.");
+        let wildcard = name.to_wildcard();
+        assert_eq!(&wildcard.to_string(), "*.com.")
     }
 }
