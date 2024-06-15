@@ -3,11 +3,18 @@ name = "rolodex"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = "1.0.86"
+clap = { version = "4", features = ["derive"] }
 lazy_static = "1.4.0"
 regex = "1.10.4"
 serde = { version = "1.0.203", features = ["derive"] }
 toml = "0.8.13"
+
+[[bin]]
+name = "dex"
+path = "src/cli.rs"
+
+[[bin]]
+name = "dex-server"
+path = "src/server.rs"
