@@ -5,6 +5,9 @@ use rolodex::{Bytes, Message, Name, Question, QuestionClass, ResponseCode};
 #[command(version, about)]
 struct Cli {
     /// The domain to find records for.
+    ///
+    /// If the domain is relative, it will be converted to an FQDN.
+    /// Example: example.com -> example.com.
     domain: String,
     /// The type of record to search for.
     #[clap(default_value_t=String::from("A"))]
@@ -18,7 +21,7 @@ fn main() {
     query.header.recursion_desired = true;
     query.header.question_count = 1;
     query.questions = vec![Question {
-        name: Name::from_str(&cli.domain),
+        name: Name::from_str(&to_fqdn(cli.domain)),
         q_type: cli.record_type.parse().unwrap(),
         q_class: QuestionClass::In,
     }];
@@ -44,4 +47,14 @@ fn main() {
             // no op
         }
     };
+}
+
+/// Converts a domain name to a fully qualified domain name, if it is not one
+/// already. In practice, this means adding a root label to the end of the
+/// domain if it is not present.
+fn to_fqdn(mut domain: String) -> String {
+    if !domain.ends_with(".") {
+        domain.push('.')
+    }
+    domain
 }
