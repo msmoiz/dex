@@ -55,7 +55,8 @@ impl Label {
 /// A fully qualified DNS domain name.
 ///
 /// A name must be shorter than 255 bytes. The last label in a name must be the
-/// root label ("") and all other labels must non-empty.
+/// root label ("") and all other labels must non-empty. When parsed from a
+/// relative name, the root label is inferred.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Name {
     labels: Vec<Label>,
@@ -82,12 +83,6 @@ impl Name {
         }
 
         Self { labels }
-    }
-
-    /// Creates a Name from a string.
-    pub fn from_str(input: &str) -> Self {
-        let labels = input.split(".").map(|s| Label::from_str(s)).collect();
-        Self::from_labels(labels)
     }
 
     /// Creates a Name from a byte stream.
@@ -128,28 +123,6 @@ impl Name {
         }
 
         Self::from_labels(labels)
-    }
-
-    /// Returns true if this name "contains" the other name.
-    ///
-    /// Returns true if the other name is a subdomain of this name. This also
-    /// returns true when the name and the other name are equal.
-    fn contains(&self, other: &Self) -> bool {
-        if self == other {
-            return true;
-        }
-
-        let mut this = self.labels.iter().rev(); //     example.com.
-        let mut other = other.labels.iter().rev(); // sub.example.com.
-        loop {
-            match (this.next(), other.next()) {
-                (Some(t), Some(o)) if t == o => continue,
-                (Some(_), Some(_)) => return false,
-                (Some(_), None) => return false,
-                (None, Some(_)) => return true,
-                (None, None) => return true,
-            }
-        }
     }
 
     /// Converts a Name to a byte stream.
@@ -205,7 +178,20 @@ impl Name {
             .chain(self.labels.iter().map(|l| l.0.clone()).skip(1))
             .collect::<Vec<_>>()
             .join(".");
-        Self::from_str(&labels)
+        Self::from_str(&labels).unwrap()
+    }
+}
+
+impl FromStr for Name {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let mut s = s.to_owned();
+        if !s.ends_with(".") {
+            s.push('.');
+        }
+        let labels = s.split(".").map(|s| Label::from_str(s)).collect();
+        Ok(Self::from_labels(labels))
     }
 }
 
@@ -1258,7 +1244,8 @@ impl From<Class> for u16 {
 #[derive(Deserialize)]
 pub struct Zone {
     /// Name of the zone.
-    name: Name,
+    #[serde(rename = "name")]
+    _name: Name,
     /// Records in the zone.
     records: Vec<Record>,
 }
@@ -1927,11 +1914,6 @@ impl Bytes {
         self.set_all(pos, &num.to_be_bytes());
     }
 
-    /// Sets a u32 in the buffer at a specific position.
-    fn set_u32(&mut self, pos: usize, num: u32) {
-        self.set_all(pos, &num.to_be_bytes());
-    }
-
     /// Finds the offset to the first occurrence of a name in the buffer.
     ///
     /// Returns None if the name has not occurred.
@@ -1949,6 +1931,8 @@ impl Bytes {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use crate::{Name, Zone};
 
     #[test]
@@ -1965,21 +1949,27 @@ mod tests {
         "#;
 
         let zone: Zone = Zone::from_toml(input).unwrap();
-        assert_eq!(zone.records[0].name(), &Name::from_str("example.com."))
+        assert_eq!(
+            zone.records[0].name(),
+            &Name::from_str("example.com.").unwrap()
+        )
     }
 
     #[test]
     fn ancestors_iterate() {
-        let name = Name::from_str("example.com.");
+        let name = Name::from_str("example.com.").unwrap();
         let mut ancestors = name.ancestors();
-        assert_eq!(ancestors.next(), Some(Name::from_str("")));
-        assert_eq!(ancestors.next(), Some(Name::from_str("com.")));
-        assert_eq!(ancestors.next(), Some(Name::from_str("example.com.")));
+        assert_eq!(ancestors.next(), Some(Name::from_str("").unwrap()));
+        assert_eq!(ancestors.next(), Some(Name::from_str("com.").unwrap()));
+        assert_eq!(
+            ancestors.next(),
+            Some(Name::from_str("example.com.").unwrap())
+        );
     }
 
     #[test]
     fn name_to_wildcard() {
-        let name = Name::from_str("example.com.");
+        let name = Name::from_str("example.com.").unwrap();
         let wildcard = name.to_wildcard();
         assert_eq!(&wildcard.to_string(), "*.com.")
     }

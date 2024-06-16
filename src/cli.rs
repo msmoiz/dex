@@ -11,7 +11,7 @@ struct Cli {
     /// If the domain is relative, it will be converted to a fully qualified
     /// domain name. For example, "example.com" will be converted to
     /// "example.com.".
-    domain: String,
+    domain: Name,
     /// Freeform arguments to modify the request.
     ///
     /// The following arguments are supported:
@@ -32,9 +32,9 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
-    let domain = to_fqdn(cli.domain);
+    let domain = cli.domain;
 
-    if Hosts::contains(&domain) {
+    if Hosts::contains(&domain.to_string()) {
         eprintln!("warning: {} is present in hosts file", domain);
     }
 
@@ -54,7 +54,7 @@ fn main() {
     query.header.recursion_desired = true;
     query.header.question_count = 1;
     query.questions = vec![Question {
-        name: Name::from_str(&domain),
+        name: domain,
         q_type: q_type.unwrap_or(QuestionType::A),
         q_class: QuestionClass::In,
     }];
@@ -91,16 +91,6 @@ fn main() {
     };
 }
 
-/// Converts a domain name to a fully qualified domain name, if it is not one
-/// already. In practice, this means adding a root label to the end of the
-/// domain if it is not present.
-fn to_fqdn(mut domain: String) -> String {
-    if !domain.ends_with(".") {
-        domain.push('.')
-    }
-    domain
-}
-
 /// Represents the hosts file found on most operating systems.
 struct Hosts;
 
@@ -118,7 +108,7 @@ impl Hosts {
             }
             let mut parts = line.split_whitespace();
             while let Some(in_host) = parts.next() {
-                if in_host == host || to_fqdn(in_host.to_owned()) == host {
+                if in_host == host || (in_host.to_owned() + ".") == host {
                     return true;
                 }
             }
