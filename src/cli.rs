@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, net::Ipv4Addr, str::FromStr};
 
 use clap::Parser;
 use rolodex::{Bytes, Message, Name, Question, QuestionClass, ResponseCode};
@@ -38,7 +38,10 @@ fn main() {
 
     let mut query_bytes = Bytes::new();
     query.to_bytes(&mut query_bytes);
-    socket.send_to(query_bytes.used(), "8.8.8.8:53").unwrap();
+    let nameserver = find_default_nameserver();
+    socket
+        .send_to(query_bytes.used(), (nameserver, 53))
+        .unwrap();
 
     let mut response_buf = [0; 512];
     let (_, _) = socket.recv_from(&mut response_buf).unwrap();
@@ -91,6 +94,21 @@ impl Hosts {
         }
         false
     }
+}
+
+/// Finds the default nameserver for this operating system.
+fn find_default_nameserver() -> Ipv4Addr {
+    let config = fs::read_to_string("/etc/resolv.conf").unwrap();
+    for line in config.lines() {
+        let mut parts = line.split_whitespace();
+        if matches!(parts.next(), Some("nameserver")) {
+            match parts.next() {
+                Some(addr) => return Ipv4Addr::from_str(addr).unwrap(),
+                None => panic!("resolver config is malformed"),
+            }
+        }
+    }
+    panic!("failed to locate default nameserver")
 }
 
 #[cfg(test)]
