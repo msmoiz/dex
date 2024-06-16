@@ -1,23 +1,32 @@
-use std::fs;
+use std::{fs, str::FromStr};
 
 use clap::Parser;
-use rolodex::{Bytes, Message, Name, Question, QuestionClass, ResponseCode};
+use rolodex::{Bytes, Message, Name, Question, QuestionClass, QuestionType, ResponseCode};
 
 #[derive(Parser, Debug)]
-#[command(version, about)]
+#[command(version, about, max_term_width = 80)]
 struct Cli {
     /// The domain to find records for.
     ///
-    /// If the domain is relative, it will be converted to an FQDN.
-    /// Example: example.com -> example.com.
+    /// If the domain is relative, it will be converted to a fully qualified
+    /// domain name. For example, "example.com" will be converted to
+    /// "example.com.".
     domain: String,
-    /// The type of record to search for.
-    #[clap(value_name="TYPE", default_value_t=String::from("A"))]
-    record_type: String,
-    /// The nameserver to send the request to.
+    /// Freeform arguments to modify the request.
     ///
-    /// [default: default nameserver for this operating system]
-    nameserver: Option<String>,
+    /// The following arguments are supported:
+    ///
+    /// [type]: The type of record to search for, specified using the alphabetic
+    /// code for the record (e.g., A, MX, NS, ...). (default: A)
+    ///
+    /// [nameserver]: The nameserver to send the request to, specified with an @
+    /// symbol in front of the name (e.g., @8.8.8.8). The nameserver may include
+    /// a port number (e.g., @8.8.8.8:53), and the host may be specified using a
+    /// hostname or an IP address. (default: system default nameserver)
+    ///
+    /// Each type of argument may be specified only once and may be specified in
+    /// any order.
+    args: Vec<String>,
 }
 
 fn main() {
@@ -29,12 +38,24 @@ fn main() {
         eprintln!("warning: {} is present in hosts file", domain);
     }
 
+    let (q_type, nameserver) = {
+        let mut q_type: Option<QuestionType> = None;
+        let mut nameserver: Option<String> = None;
+        for arg in cli.args {
+            match arg.strip_prefix("@") {
+                Some(ns) => nameserver = Some(ns.to_owned()),
+                None => q_type = Some(QuestionType::from_str(&arg).unwrap()),
+            }
+        }
+        (q_type, nameserver)
+    };
+
     let mut query = Message::new();
     query.header.recursion_desired = true;
     query.header.question_count = 1;
     query.questions = vec![Question {
         name: Name::from_str(&domain),
-        q_type: cli.record_type.parse().unwrap(),
+        q_type: q_type.unwrap_or(QuestionType::A),
         q_class: QuestionClass::In,
     }];
 
@@ -43,7 +64,7 @@ fn main() {
     let mut query_bytes = Bytes::new();
     query.to_bytes(&mut query_bytes);
 
-    let nameserver = cli.nameserver.unwrap_or(find_default_nameserver());
+    let nameserver = nameserver.unwrap_or(find_default_nameserver());
 
     if nameserver.contains(":") {
         socket.send_to(query_bytes.used(), nameserver).unwrap();

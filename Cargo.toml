@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "wrap_help"] }
 lazy_static = "1.4.0"
 regex = "1.10.4"
 serde = { version = "1.0.203", features = ["derive"] }
