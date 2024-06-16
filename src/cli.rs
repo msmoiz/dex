@@ -14,6 +14,10 @@ struct Cli {
     /// The type of record to search for.
     #[clap(value_name="TYPE", default_value_t=String::from("A"))]
     record_type: String,
+    /// The nameserver to send the request to.
+    ///
+    /// [default: default nameserver for this operating system]
+    nameserver: Option<String>,
 }
 
 fn main() {
@@ -38,7 +42,14 @@ fn main() {
 
     let mut query_bytes = Bytes::new();
     query.to_bytes(&mut query_bytes);
-    let nameserver = find_default_nameserver();
+
+    let nameserver = {
+        match cli.nameserver {
+            Some(addr) => Ipv4Addr::from_str(&addr).unwrap(),
+            None => find_default_nameserver(),
+        }
+    };
+
     socket
         .send_to(query_bytes.used(), (nameserver, 53))
         .unwrap();
