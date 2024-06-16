@@ -1,7 +1,7 @@
 use std::{fs, str::FromStr};
 
 use clap::Parser;
-use rolodex::{Bytes, Message, Name, Question, QuestionClass, QuestionType, ResponseCode};
+use dex::{Bytes, Message, Name, Question, QuestionClass, QuestionType, ResponseCode};
 
 #[derive(Parser, Debug)]
 #[command(version, about, max_term_width = 80)]

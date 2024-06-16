@@ -1,6 +1,6 @@
 use std::fs;
 
-use rolodex::{Bytes, Message, OperationCode, QuestionType, Record, ResponseCode, Zone};
+use dex::{Bytes, Message, OperationCode, QuestionType, Record, ResponseCode, Zone};
 
 fn main() {
     Server::start();

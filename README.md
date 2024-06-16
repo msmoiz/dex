@@ -1,3 +1,3 @@
-# Rolodex
+# dex
 
-Rolodex is a Domain Name System (DNS) implementation.
+dex is a Domain Name System (DNS) implementation.
