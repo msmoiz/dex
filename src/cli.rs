@@ -1,4 +1,4 @@
-use std::{fs, str::FromStr};
+use std::{convert::Infallible, fs, str::FromStr};
 
 use clap::Parser;
 use dex::{Bytes, Message, Name, Question, QuestionClass, QuestionType, ResponseCode};
@@ -26,29 +26,51 @@ struct Cli {
     ///
     /// Each type of argument may be specified only once and may be specified in
     /// any order.
-    args: Vec<String>,
+    #[clap(num_args = 0..)]
+    args: Args,
+}
+
+/// Freeform arguments to modify the request.
+#[derive(Debug, Clone, Default)]
+struct Args {
+    /// The type of record to search for.
+    q_type: Option<QuestionType>,
+    /// The nameserver to send the request to.
+    nameserver: Option<String>,
+}
+
+impl FromStr for Args {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut args = Self::default();
+        for arg in s.split_whitespace() {
+            if let Some(nameserver) = arg.strip_prefix("@") {
+                match args.nameserver.as_ref() {
+                    Some(_) => panic!("nameserver specified more than once"),
+                    None => args.nameserver = Some(nameserver.to_owned()),
+                }
+                continue;
+            }
+
+            match args.q_type.as_ref() {
+                Some(_) => panic!("type specified more than once"),
+                None => args.q_type = Some(QuestionType::from_str(&arg).unwrap()),
+            }
+        }
+        Ok(args)
+    }
 }
 
 fn main() {
-    let cli = Cli::parse();
-
-    let domain = cli.domain;
+    let Cli {
+        domain,
+        args: Args { q_type, nameserver },
+    } = Cli::parse();
 
     if Hosts::contains(&domain.to_string()) {
         eprintln!("warning: {} is present in hosts file", domain);
     }
-
-    let (q_type, nameserver) = {
-        let mut q_type: Option<QuestionType> = None;
-        let mut nameserver: Option<String> = None;
-        for arg in cli.args {
-            match arg.strip_prefix("@") {
-                Some(ns) => nameserver = Some(ns.to_owned()),
-                None => q_type = Some(QuestionType::from_str(&arg).unwrap()),
-            }
-        }
-        (q_type, nameserver)
-    };
 
     let mut query = Message::new();
     query.header.recursion_desired = true;
