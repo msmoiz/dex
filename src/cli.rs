@@ -1,4 +1,4 @@
-use std::{fs, net::Ipv4Addr, str::FromStr};
+use std::fs;
 
 use clap::Parser;
 use rolodex::{Bytes, Message, Name, Question, QuestionClass, ResponseCode};
@@ -43,16 +43,15 @@ fn main() {
     let mut query_bytes = Bytes::new();
     query.to_bytes(&mut query_bytes);
 
-    let nameserver = {
-        match cli.nameserver {
-            Some(addr) => Ipv4Addr::from_str(&addr).unwrap(),
-            None => find_default_nameserver(),
-        }
-    };
+    let nameserver = cli.nameserver.unwrap_or(find_default_nameserver());
 
-    socket
-        .send_to(query_bytes.used(), (nameserver, 53))
-        .unwrap();
+    if nameserver.contains(":") {
+        socket.send_to(query_bytes.used(), nameserver).unwrap();
+    } else {
+        socket
+            .send_to(query_bytes.used(), (nameserver, 53))
+            .unwrap();
+    }
 
     let mut response_buf = [0; 512];
     let (_, _) = socket.recv_from(&mut response_buf).unwrap();
@@ -108,13 +107,13 @@ impl Hosts {
 }
 
 /// Finds the default nameserver for this operating system.
-fn find_default_nameserver() -> Ipv4Addr {
+fn find_default_nameserver() -> String {
     let config = fs::read_to_string("/etc/resolv.conf").unwrap();
     for line in config.lines() {
         let mut parts = line.split_whitespace();
         if matches!(parts.next(), Some("nameserver")) {
             match parts.next() {
-                Some(addr) => return Ipv4Addr::from_str(addr).unwrap(),
+                Some(addr) => return addr.to_owned(),
                 None => panic!("resolver config is malformed"),
             }
         }
