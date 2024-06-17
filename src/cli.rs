@@ -34,7 +34,7 @@ struct Cli {
     #[clap(num_args = 0..)]
     args: Vec<String>,
     /// Use TCP to send the request. (default: UDP)
-    #[arg(long)]
+    #[arg(long, default_value_t = false)]
     tcp: bool,
 }
 
