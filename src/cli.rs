@@ -1,7 +1,7 @@
 use std::{convert::Infallible, fs, str::FromStr};
 
 use clap::Parser;
-use dex::{Bytes, Message, Name, Question, QuestionClass, QuestionType, ResponseCode};
+use dex::{Message, Name, Question, QuestionClass, QuestionType, ResponseCode, UdpTransport};
 
 #[derive(Parser, Debug)]
 #[command(version, about, max_term_width = 80)]
@@ -94,34 +94,20 @@ fn main() {
         eprintln!("warning: {} is present in hosts file", domain);
     }
 
-    let mut query = Message::new();
-    query.header.recursion_desired = true;
-    query.header.question_count = 1;
-    query.questions = vec![Question {
+    let mut request = Message::new();
+    request.header.recursion_desired = true;
+    request.header.question_count = 1;
+    request.questions = vec![Question {
         name: domain,
         q_type: q_type.unwrap_or(QuestionType::A),
         q_class: q_class.unwrap_or(QuestionClass::In),
     }];
 
-    let socket = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
-
-    let mut query_bytes = Bytes::new();
-    query.to_bytes(&mut query_bytes);
-
     let nameserver = nameserver.unwrap_or(find_default_nameserver());
 
-    if nameserver.contains(":") {
-        socket.send_to(query_bytes.used(), nameserver).unwrap();
-    } else {
-        socket
-            .send_to(query_bytes.used(), (nameserver, 53))
-            .unwrap();
-    }
+    let transport = UdpTransport::new(nameserver);
 
-    let mut response_buf = [0; 512];
-    let (_, _) = socket.recv_from(&mut response_buf).unwrap();
-    let mut response_bytes = Bytes::from_buf(response_buf);
-    let response = Message::from_bytes(&mut response_bytes);
+    let response = transport.send(request);
 
     match response.header.resp_code {
         ResponseCode::Success => {
