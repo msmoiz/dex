@@ -1,4 +1,6 @@
+mod tcp;
 mod udp;
+pub use tcp::TcpTransport;
 pub use udp::UdpTransport;
 
 use std::{

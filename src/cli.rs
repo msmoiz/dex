@@ -1,7 +1,9 @@
 use std::{convert::Infallible, fs, str::FromStr};
 
 use clap::Parser;
-use dex::{Message, Name, Question, QuestionClass, QuestionType, ResponseCode, UdpTransport};
+use dex::{
+    Message, Name, Question, QuestionClass, QuestionType, ResponseCode, TcpTransport, UdpTransport,
+};
 
 #[derive(Parser, Debug)]
 #[command(version, about, max_term_width = 80)]
@@ -31,6 +33,9 @@ struct Cli {
     /// any order.
     #[clap(num_args = 0..)]
     args: Args,
+    /// Use TCP to send the request. (default: UDP)
+    #[arg(long)]
+    tcp: bool,
 }
 
 /// Freeform arguments to modify the request.
@@ -83,6 +88,7 @@ impl FromStr for Args {
 fn main() {
     let Cli {
         domain,
+        tcp,
         args: Args {
             q_type,
             q_class,
@@ -105,9 +111,13 @@ fn main() {
 
     let nameserver = nameserver.unwrap_or(find_default_nameserver());
 
-    let transport = UdpTransport::new(nameserver);
-
-    let response = transport.send(request);
+    let response = {
+        if tcp {
+            TcpTransport::new(nameserver).send(request)
+        } else {
+            UdpTransport::new(nameserver).send(request)
+        }
+    };
 
     match response.header.resp_code {
         ResponseCode::Success => {
