@@ -19,6 +19,9 @@ struct Cli {
     /// [type]: The type of record to search for, specified using the alphabetic
     /// code for the record (e.g., A, MX, NS, ...). (default: A)
     ///
+    /// [class]: The class of the request, specified using the alphabetic code
+    /// for the class (e.g., IN, HS, ...). (default: IN)
+    ///
     /// [nameserver]: The nameserver to send the request to, specified with an @
     /// symbol in front of the name (e.g., @8.8.8.8). The nameserver may include
     /// a port number (e.g., @8.8.8.8:53), and the host may be specified using a
@@ -35,6 +38,8 @@ struct Cli {
 struct Args {
     /// The type of record to search for.
     q_type: Option<QuestionType>,
+    /// The class of the request.
+    q_class: Option<QuestionClass>,
     /// The nameserver to send the request to.
     nameserver: Option<String>,
 }
@@ -53,10 +58,23 @@ impl FromStr for Args {
                 continue;
             }
 
-            match args.q_type.as_ref() {
-                Some(_) => panic!("type specified more than once"),
-                None => args.q_type = Some(QuestionType::from_str(&arg).unwrap()),
+            if let Ok(q_type) = QuestionType::from_str(&arg) {
+                match args.q_type.as_ref() {
+                    Some(_) => panic!("type specified more than once"),
+                    None => args.q_type = Some(q_type),
+                }
+                continue;
             }
+
+            if let Ok(q_class) = QuestionClass::from_str(&arg) {
+                match args.q_class.as_ref() {
+                    Some(_) => panic!("class specified more than once"),
+                    None => args.q_class = Some(q_class),
+                }
+                continue;
+            }
+
+            panic!("unrecognized argument: {arg}");
         }
         Ok(args)
     }
@@ -65,7 +83,11 @@ impl FromStr for Args {
 fn main() {
     let Cli {
         domain,
-        args: Args { q_type, nameserver },
+        args: Args {
+            q_type,
+            q_class,
+            nameserver,
+        },
     } = Cli::parse();
 
     if Hosts::contains(&domain.to_string()) {
@@ -78,7 +100,7 @@ fn main() {
     query.questions = vec![Question {
         name: domain,
         q_type: q_type.unwrap_or(QuestionType::A),
-        q_class: QuestionClass::In,
+        q_class: q_class.unwrap_or(QuestionClass::In),
     }];
 
     let socket = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();

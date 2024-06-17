@@ -6,7 +6,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{de::Visitor, Deserialize};
@@ -1667,7 +1667,7 @@ impl From<QuestionType> for u16 {
 }
 
 impl FromStr for QuestionType {
-    type Err = Infallible;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         use QuestionType::*;
@@ -1693,7 +1693,7 @@ impl FromStr for QuestionType {
             "MAILB" => MAILB,
             "MAILA" => MAILA,
             "ALL" => ALL,
-            _ => panic!("unsupported qtype: {s}"),
+            _ => bail!("unsupported qtype: {s}"),
         };
 
         Ok(qtype)
@@ -1741,6 +1741,25 @@ impl From<QuestionClass> for u16 {
             Hs => 4,
             Any => 255,
         }
+    }
+}
+
+impl FromStr for QuestionClass {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        use QuestionClass::*;
+
+        let value = match s {
+            "IN" => In,
+            "CS" => Cs,
+            "CH" => Ch,
+            "HS" => Hs,
+            "ANY" => Any,
+            _ => bail!("unsupported q_class: {s}"),
+        };
+
+        Ok(value)
     }
 }
 
