@@ -33,7 +33,10 @@ struct Cli {
     /// any order.
     #[clap(num_args = 0..)]
     args: Vec<String>,
-    /// Use TCP to send the request. (default: UDP)
+    /// Use UDP to send the request. (default: UDP with TCP fallback)
+    #[arg(long, default_value_t = false)]
+    udp: bool,
+    /// Use TCP to send the request. (default: UDP with TCP fallback)
     #[arg(long, default_value_t = false)]
     tcp: bool,
 }
@@ -86,7 +89,12 @@ impl FromStr for Args {
 }
 
 fn main() {
-    let Cli { domain, tcp, args } = Cli::parse();
+    let Cli {
+        domain,
+        udp,
+        tcp,
+        args,
+    } = Cli::parse();
 
     let Args {
         q_type,
@@ -112,8 +120,15 @@ fn main() {
     let response = {
         if tcp {
             TcpTransport::new(nameserver).send(request)
-        } else {
+        } else if udp {
             UdpTransport::new(nameserver).send(request)
+        } else {
+            let response = UdpTransport::new(nameserver.clone()).send(request.clone());
+            if response.header.is_truncated {
+                TcpTransport::new(nameserver).send(request)
+            } else {
+                response
+            }
         }
     };
 

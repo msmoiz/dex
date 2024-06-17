@@ -1298,7 +1298,7 @@ impl Zone {
 }
 
 /// A DNS message.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Message {
     pub header: Header,
     pub questions: Vec<Question>,
@@ -1467,7 +1467,7 @@ impl Display for ResponseCode {
 }
 
 /// Message header.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Header {
     pub id: u16,
     pub is_response: bool,
@@ -1790,7 +1790,7 @@ impl FromStr for QuestionClass {
 }
 
 /// A DNS question.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Question {
     pub name: Name,
     pub q_type: QuestionType,
