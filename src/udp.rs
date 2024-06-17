@@ -30,7 +30,7 @@ impl UdpTransport {
 
         let mut response_buf = [0; 512];
         let (_, _) = socket.recv_from(&mut response_buf).unwrap();
-        let mut response_bytes = Bytes::from_buf(response_buf);
+        let mut response_bytes = Bytes::from_buf(&response_buf);
         let response = Message::from_bytes(&mut response_bytes);
 
         response

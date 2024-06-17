@@ -1800,7 +1800,7 @@ impl Question {
 
 /// A byte stream.
 pub struct Bytes {
-    buf: [u8; 512],
+    buf: Vec<u8>,
     pos: usize,
     /// Map of offsets to the first occurrence of a name in the buffer.
     ///
@@ -1812,16 +1812,16 @@ impl Bytes {
     /// Creates a new Bytes iterator with an empty buffer.
     pub fn new() -> Self {
         Self {
-            buf: [0; 512],
+            buf: vec![],
             pos: 0,
             occs: HashMap::new(),
         }
     }
 
     /// Creates a new Bytes iterator from a buffer.
-    pub fn from_buf(buf: [u8; 512]) -> Self {
+    pub fn from_buf(buf: &[u8]) -> Self {
         Self {
-            buf,
+            buf: buf.into(),
             pos: 0,
             occs: HashMap::new(),
         }
@@ -1900,7 +1900,7 @@ impl Bytes {
 
     /// Writes a byte to the buffer.
     fn write(&mut self, byte: u8) {
-        self.buf[self.pos] = byte;
+        self.buf.push(byte);
         self.pos += 1;
     }
 

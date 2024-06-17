@@ -35,8 +35,7 @@ impl TcpTransport {
         let response_len = u16::from_be_bytes(response_len_buf);
         let mut response_buf = vec![0; response_len as usize];
         socket.read_exact(&mut response_buf).unwrap();
-        response_buf.resize(512, 0);
-        let mut response_bytes = Bytes::from_buf(response_buf.try_into().unwrap());
+        let mut response_bytes = Bytes::from_buf(&response_buf);
         let response = Message::from_bytes(&mut response_bytes);
 
         response

@@ -27,7 +27,7 @@ impl Server {
             let (_, addr) = socket.recv_from(&mut query_buffer).unwrap();
             println!("received query from {addr}");
 
-            let mut query_bytes = Bytes::from_buf(query_buffer);
+            let mut query_bytes = Bytes::from_buf(&query_buffer);
             let query = Message::from_bytes(&mut query_bytes);
 
             let response = server.serve(query);
