@@ -1449,6 +1449,23 @@ impl From<ResponseCode> for u8 {
     }
 }
 
+impl Display for ResponseCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ResponseCode::*;
+
+        let str = match self {
+            Success => "succes",
+            FormatError => "format_error",
+            ServerFailure => "server_failure",
+            NameError => "nonexistent_domain",
+            NotImplemented => "not_implemented",
+            Refused => "refused",
+        };
+
+        write!(f, "{str}")
+    }
+}
+
 /// Message header.
 #[derive(Debug)]
 pub struct Header {

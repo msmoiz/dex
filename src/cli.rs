@@ -123,9 +123,7 @@ fn main() {
                 println!("{record}")
             }
         }
-        _ => {
-            // no op
-        }
+        c @ _ => eprintln!("status: {c}"),
     };
 }
 
