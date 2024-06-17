@@ -195,7 +195,11 @@ impl FromStr for Name {
         if !s.ends_with(".") {
             s.push('.');
         }
-        let labels = s.split(".").map(|s| Label::from_str(s)).collect();
+        let labels = if s == "." {
+            vec![Label::from_str("")]
+        } else {
+            s.split(".").map(|s| Label::from_str(s)).collect()
+        };
         Ok(Self::from_labels(labels))
     }
 }
@@ -1983,7 +1987,7 @@ mod tests {
     fn ancestors_iterate() {
         let name = Name::from_str("example.com.").unwrap();
         let mut ancestors = name.ancestors();
-        assert_eq!(ancestors.next(), Some(Name::from_str("").unwrap()));
+        assert_eq!(ancestors.next(), Some(Name::from_str(".").unwrap()));
         assert_eq!(ancestors.next(), Some(Name::from_str("com.").unwrap()));
         assert_eq!(
             ancestors.next(),
