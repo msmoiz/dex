@@ -32,7 +32,7 @@ struct Cli {
     /// Each type of argument may be specified only once and may be specified in
     /// any order.
     #[clap(num_args = 0..)]
-    args: Args,
+    args: Vec<String>,
     /// Use TCP to send the request. (default: UDP)
     #[arg(long)]
     tcp: bool,
@@ -86,15 +86,13 @@ impl FromStr for Args {
 }
 
 fn main() {
-    let Cli {
-        domain,
-        tcp,
-        args: Args {
-            q_type,
-            q_class,
-            nameserver,
-        },
-    } = Cli::parse();
+    let Cli { domain, tcp, args } = Cli::parse();
+
+    let Args {
+        q_type,
+        q_class,
+        nameserver,
+    } = args.join(" ").parse().unwrap();
 
     if Hosts::contains(&domain.to_string()) {
         eprintln!("warning: {} is present in hosts file", domain);
