@@ -457,8 +457,10 @@ pub enum Record {
     /// EDNS options record.
     Opt {
         name: Name,
-        size: u16,
-        ttl: u32,
+        max_response_size: u16,
+        extended_rcode: u8,
+        version: u8,
+        dnssec_ok: bool,
         data: Vec<u8>,
     },
 }
@@ -693,6 +695,14 @@ impl Record {
                 }
             }
             41 => {
+                let (extended_rcode, version, dns_ok) = {
+                    let bytez = ttl.to_be_bytes();
+                    let extended_rcode = bytez[0];
+                    let version = bytez[1];
+                    let dns_ok = ((bytez[2] >> 7) & 1) == 1;
+                    (extended_rcode, version, dns_ok)
+                };
+
                 let data = {
                     let len = rd_len as usize - 5;
                     let bytez = bytes.read_exact(len).unwrap();
@@ -701,8 +711,10 @@ impl Record {
 
                 Self::Opt {
                     name,
-                    size: class,
-                    ttl,
+                    max_response_size: class,
+                    extended_rcode,
+                    version,
+                    dnssec_ok: dns_ok,
                     data,
                 }
             }
@@ -890,14 +902,18 @@ impl Record {
                 addr,
             },
             Record::Opt {
-                size: class,
-                ttl,
+                max_response_size: class,
+                extended_rcode,
+                version,
+                dnssec_ok,
                 data,
                 ..
             } => Record::Opt {
                 name,
-                size: class,
-                ttl,
+                max_response_size: class,
+                extended_rcode,
+                version,
+                dnssec_ok,
                 data,
             },
         }
@@ -930,49 +946,55 @@ impl Record {
     /// Returns the class of the record.
     fn class(&self) -> Class {
         match self {
-            Record::A { class, .. } => class,
-            Record::Ns { class, .. } => class,
-            Record::Md { class, .. } => class,
-            Record::Mf { class, .. } => class,
-            Record::Cname { class, .. } => class,
-            Record::Soa { class, .. } => class,
-            Record::Mb { class, .. } => class,
-            Record::Mg { class, .. } => class,
-            Record::Mr { class, .. } => class,
-            Record::Null { class, .. } => class,
-            Record::Wks { class, .. } => class,
-            Record::Ptr { class, .. } => class,
-            Record::Hinfo { class, .. } => class,
-            Record::Minfo { class, .. } => class,
-            Record::Mx { class, .. } => class,
-            Record::Txt { class, .. } => class,
-            Record::Aaaa { class, .. } => class,
-            Record::Opt { .. } => &Class::In,
+            Record::A { class, .. } => class.clone(),
+            Record::Ns { class, .. } => class.clone(),
+            Record::Md { class, .. } => class.clone(),
+            Record::Mf { class, .. } => class.clone(),
+            Record::Cname { class, .. } => class.clone(),
+            Record::Soa { class, .. } => class.clone(),
+            Record::Mb { class, .. } => class.clone(),
+            Record::Mg { class, .. } => class.clone(),
+            Record::Mr { class, .. } => class.clone(),
+            Record::Null { class, .. } => class.clone(),
+            Record::Wks { class, .. } => class.clone(),
+            Record::Ptr { class, .. } => class.clone(),
+            Record::Hinfo { class, .. } => class.clone(),
+            Record::Minfo { class, .. } => class.clone(),
+            Record::Mx { class, .. } => class.clone(),
+            Record::Txt { class, .. } => class.clone(),
+            Record::Aaaa { class, .. } => class.clone(),
+            Record::Opt {
+                max_response_size, ..
+            } => Class::Edns(*max_response_size),
         }
-        .clone()
     }
 
     /// Returns the ttl of the record.
     fn ttl(&self) -> u32 {
-        *match self {
-            Record::A { ttl, .. } => ttl,
-            Record::Ns { ttl, .. } => ttl,
-            Record::Md { ttl, .. } => ttl,
-            Record::Mf { ttl, .. } => ttl,
-            Record::Cname { ttl, .. } => ttl,
-            Record::Soa { ttl, .. } => ttl,
-            Record::Mb { ttl, .. } => ttl,
-            Record::Mg { ttl, .. } => ttl,
-            Record::Mr { ttl, .. } => ttl,
-            Record::Null { ttl, .. } => ttl,
-            Record::Wks { ttl, .. } => ttl,
-            Record::Ptr { ttl, .. } => ttl,
-            Record::Hinfo { ttl, .. } => ttl,
-            Record::Minfo { ttl, .. } => ttl,
-            Record::Mx { ttl, .. } => ttl,
-            Record::Txt { ttl, .. } => ttl,
-            Record::Aaaa { ttl, .. } => ttl,
-            Record::Opt { ttl, .. } => ttl,
+        match self {
+            Record::A { ttl, .. } => *ttl,
+            Record::Ns { ttl, .. } => *ttl,
+            Record::Md { ttl, .. } => *ttl,
+            Record::Mf { ttl, .. } => *ttl,
+            Record::Cname { ttl, .. } => *ttl,
+            Record::Soa { ttl, .. } => *ttl,
+            Record::Mb { ttl, .. } => *ttl,
+            Record::Mg { ttl, .. } => *ttl,
+            Record::Mr { ttl, .. } => *ttl,
+            Record::Null { ttl, .. } => *ttl,
+            Record::Wks { ttl, .. } => *ttl,
+            Record::Ptr { ttl, .. } => *ttl,
+            Record::Hinfo { ttl, .. } => *ttl,
+            Record::Minfo { ttl, .. } => *ttl,
+            Record::Mx { ttl, .. } => *ttl,
+            Record::Txt { ttl, .. } => *ttl,
+            Record::Aaaa { ttl, .. } => *ttl,
+            Record::Opt {
+                extended_rcode,
+                version,
+                dnssec_ok,
+                ..
+            } => u32::from_be_bytes([*extended_rcode, *version, u8::from(*dnssec_ok) << 7, 0]),
         }
     }
 
@@ -1250,18 +1272,20 @@ pub enum Class {
     Ch,
     /// Hesiod.
     Hs,
+    #[doc(hidden)]
+    /// EDNS(0) max response size.
+    Edns(u16),
 }
 
 impl Display for Class {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let code = match self {
-            Class::In => "IN",
-            Class::Cs => "CS",
-            Class::Ch => "CH",
-            Class::Hs => "HS",
-        };
-
-        write!(f, "{code}")
+        match self {
+            Class::In => write!(f, "IN"),
+            Class::Cs => write!(f, "CS"),
+            Class::Ch => write!(f, "CH"),
+            Class::Hs => write!(f, "HS"),
+            Class::Edns(max_response_size) => write!(f, "{max_response_size}"),
+        }
     }
 }
 
@@ -1284,6 +1308,7 @@ impl From<Class> for u16 {
             Class::Cs => 2,
             Class::Ch => 3,
             Class::Hs => 4,
+            Class::Edns(max_response_size) => max_response_size,
         }
     }
 }

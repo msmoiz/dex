@@ -126,8 +126,10 @@ fn main() {
     if edns {
         request.additional_records = vec![Record::Opt {
             name: Name::from_str(".").unwrap(),
-            size: max_response_size,
-            ttl: 0,
+            max_response_size,
+            extended_rcode: 0,
+            version: 0,
+            dnssec_ok: false,
             data: vec![],
         }];
     }
