@@ -3,12 +3,16 @@ use crate::{Bytes, Message};
 /// Message transport over UDP.
 pub struct UdpTransport {
     nameserver: String,
+    max_response_size: u16,
 }
 
 impl UdpTransport {
     /// Creates a new UdpTransport object.
-    pub fn new(nameserver: String) -> Self {
-        Self { nameserver }
+    pub fn new(nameserver: String, max_size: u16) -> Self {
+        Self {
+            nameserver,
+            max_response_size: max_size,
+        }
     }
 
     /// Sends a DNS request.
@@ -28,7 +32,7 @@ impl UdpTransport {
                 .unwrap();
         }
 
-        let mut response_buf = [0; 512];
+        let mut response_buf = vec![0; self.max_response_size as usize];
         let (_, _) = socket.recv_from(&mut response_buf).unwrap();
         let mut response_bytes = Bytes::from_buf(&response_buf);
         let response = Message::from_bytes(&mut response_bytes);

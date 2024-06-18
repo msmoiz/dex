@@ -454,6 +454,13 @@ pub enum Record {
         ttl: u32,
         addr: Ipv6Addr,
     },
+    /// EDNS options record.
+    Opt {
+        name: Name,
+        size: u16,
+        ttl: u32,
+        data: Vec<u8>,
+    },
 }
 
 impl Record {
@@ -461,7 +468,7 @@ impl Record {
     fn from_bytes(bytes: &mut Bytes) -> Self {
         let name = Name::from_bytes(bytes);
         let r_type = bytes.read_u16().unwrap();
-        let class = bytes.read_u16().unwrap().into();
+        let class = bytes.read_u16().unwrap();
         let ttl = bytes.read_u32().unwrap();
         let rd_len = bytes.read_u16().unwrap();
 
@@ -471,7 +478,7 @@ impl Record {
 
                 Self::A {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     addr,
                 }
@@ -481,7 +488,7 @@ impl Record {
 
                 Self::Ns {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     host,
                 }
@@ -491,7 +498,7 @@ impl Record {
 
                 Self::Md {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     host,
                 }
@@ -501,7 +508,7 @@ impl Record {
 
                 Self::Mf {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     host,
                 }
@@ -511,7 +518,7 @@ impl Record {
 
                 Self::Cname {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     host,
                 }
@@ -527,7 +534,7 @@ impl Record {
 
                 Self::Soa {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     origin,
                     mailbox,
@@ -543,7 +550,7 @@ impl Record {
 
                 Self::Mb {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     host,
                 }
@@ -553,7 +560,7 @@ impl Record {
 
                 Self::Mg {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     host,
                 }
@@ -563,7 +570,7 @@ impl Record {
 
                 Self::Mr {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     host,
                 }
@@ -573,7 +580,7 @@ impl Record {
 
                 Self::Null {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     data,
                 }
@@ -589,7 +596,7 @@ impl Record {
 
                 Self::Wks {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     addr,
                     protocol,
@@ -601,7 +608,7 @@ impl Record {
 
                 Self::Ptr {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     host,
                 }
@@ -621,7 +628,7 @@ impl Record {
 
                 Self::Hinfo {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     cpu,
                     os,
@@ -633,7 +640,7 @@ impl Record {
 
                 Self::Minfo {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     r_mailbox,
                     e_mailbox,
@@ -645,7 +652,7 @@ impl Record {
 
                 Self::Mx {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     priority,
                     host,
@@ -666,7 +673,7 @@ impl Record {
 
                 Self::Txt {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     content,
                 }
@@ -680,16 +687,30 @@ impl Record {
 
                 Self::Aaaa {
                     name,
-                    class,
+                    class: class.into(),
                     ttl,
                     addr,
+                }
+            }
+            41 => {
+                let data = {
+                    let len = rd_len as usize - 5;
+                    let bytez = bytes.read_exact(len).unwrap();
+                    bytez
+                };
+
+                Self::Opt {
+                    name,
+                    size: class,
+                    ttl,
+                    data,
                 }
             }
             _ => panic!("unsupported record type: {r_type}"),
         }
     }
 
-    ///
+    /// Returns a clone of this Record with a new name.
     pub fn with_name(&self, name: Name) -> Self {
         match self.clone() {
             Record::A {
@@ -868,6 +889,17 @@ impl Record {
                 ttl,
                 addr,
             },
+            Record::Opt {
+                size: class,
+                ttl,
+                data,
+                ..
+            } => Record::Opt {
+                name,
+                size: class,
+                ttl,
+                data,
+            },
         }
     }
 
@@ -891,6 +923,7 @@ impl Record {
             Record::Mx { name, .. } => name,
             Record::Txt { name, .. } => name,
             Record::Aaaa { name, .. } => name,
+            Record::Opt { name, .. } => name,
         }
     }
 
@@ -914,6 +947,7 @@ impl Record {
             Record::Mx { class, .. } => class,
             Record::Txt { class, .. } => class,
             Record::Aaaa { class, .. } => class,
+            Record::Opt { .. } => &Class::In,
         }
         .clone()
     }
@@ -938,6 +972,7 @@ impl Record {
             Record::Mx { ttl, .. } => ttl,
             Record::Txt { ttl, .. } => ttl,
             Record::Aaaa { ttl, .. } => ttl,
+            Record::Opt { ttl, .. } => ttl,
         }
     }
 
@@ -961,6 +996,7 @@ impl Record {
             Record::Mx { .. } => 15,
             Record::Txt { .. } => 16,
             Record::Aaaa { .. } => 28,
+            Record::Opt { .. } => 41,
         }
     }
 
@@ -1146,6 +1182,10 @@ impl Record {
                 bytes.write_u16(16);
                 bytes.write_all(&addr.octets());
             }
+            Record::Opt { data, .. } => {
+                bytes.write_u16(data.len() as u16);
+                bytes.write_all(data)
+            }
         }
     }
 }
@@ -1192,6 +1232,7 @@ impl Display for Record {
             Record::Mx { priority, host, .. } => write!(f, "MX {priority} {host}"),
             Record::Txt { content, .. } => write!(f, "TXT {content}"),
             Record::Aaaa { addr, .. } => write!(f, "AAAA {addr}"),
+            Record::Opt { data, .. } => write!(f, "OPT {data:x?}"),
         }
     }
 }

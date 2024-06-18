@@ -1,8 +1,9 @@
 use std::{convert::Infallible, fs, str::FromStr};
 
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use dex::{
-    Message, Name, Question, QuestionClass, QuestionType, ResponseCode, TcpTransport, UdpTransport,
+    Message, Name, Question, QuestionClass, QuestionType, Record, ResponseCode, TcpTransport,
+    UdpTransport,
 };
 
 #[derive(Parser, Debug)]
@@ -39,6 +40,9 @@ struct Cli {
     /// Use TCP to send the request. (default: UDP with TCP fallback)
     #[arg(long, default_value_t = false)]
     tcp: bool,
+    /// Disable EDNS(0) for the request. (default: EDNS enabled)
+    #[arg(long, action=ArgAction::SetFalse)]
+    no_edns: bool,
 }
 
 /// Freeform arguments to modify the request.
@@ -94,6 +98,7 @@ fn main() {
         udp,
         tcp,
         args,
+        no_edns: edns,
     } = Cli::parse();
 
     let Args {
@@ -108,6 +113,7 @@ fn main() {
 
     let mut request = Message::new();
     request.header.recursion_desired = true;
+
     request.header.question_count = 1;
     request.questions = vec![Question {
         name: domain,
@@ -115,15 +121,27 @@ fn main() {
         q_class: q_class.unwrap_or(QuestionClass::In),
     }];
 
+    let max_response_size = if edns { 4096 } else { 512 };
+
+    if edns {
+        request.additional_records = vec![Record::Opt {
+            name: Name::from_str(".").unwrap(),
+            size: max_response_size,
+            ttl: 0,
+            data: vec![],
+        }];
+    }
+
     let nameserver = nameserver.unwrap_or(find_default_nameserver());
 
     let response = {
         if tcp {
             TcpTransport::new(nameserver).send(request)
         } else if udp {
-            UdpTransport::new(nameserver).send(request)
+            UdpTransport::new(nameserver, max_response_size).send(request)
         } else {
-            let response = UdpTransport::new(nameserver.clone()).send(request.clone());
+            let response =
+                UdpTransport::new(nameserver.clone(), max_response_size).send(request.clone());
             if response.header.is_truncated {
                 TcpTransport::new(nameserver).send(request)
             } else {
