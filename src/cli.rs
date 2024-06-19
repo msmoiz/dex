@@ -189,6 +189,7 @@ impl Hosts {
 }
 
 /// Finds the default nameserver for this operating system.
+#[cfg(unix)]
 fn find_default_nameserver() -> String {
     let config = fs::read_to_string("/etc/resolv.conf").unwrap();
     for line in config.lines() {
@@ -200,6 +201,40 @@ fn find_default_nameserver() -> String {
             }
         }
     }
+    panic!("failed to locate default nameserver")
+}
+
+/// Finds the default nameserver for this operating system.
+#[cfg(windows)]
+fn find_default_nameserver() -> String {
+    use std::net::{IpAddr, UdpSocket};
+
+    // Get the IP of the network adapter that is used to access the internet
+    // https://stackoverflow.com/questions/24661022/getting-ip-adress-associated-to-real-hardware-ethernet-controller-in-windows-c
+    fn get_ipv4() -> io::Result<IpAddr> {
+        let s = UdpSocket::bind("0.0.0.0:0")?;
+        s.connect("8.8.8.8:53")?;
+        let addr = s.local_addr()?;
+        Ok(addr.ip())
+    }
+
+    let ip = get_ipv4().ok();
+
+    let adapters = ipconfig::get_adapters()?;
+    let active_adapters = adapters.iter().filter(|a| {
+        a.oper_status() == ipconfig::OperStatus::IfOperStatusUp && !a.gateways().is_empty()
+    });
+
+    if let Some(dns_server) = active_adapters
+        .clone()
+        .find(|a| ip.map(|ip| a.ip_addresses().contains(&ip)).unwrap_or(false))
+        .map(|a| a.dns_servers().first())
+        .flatten()
+    {
+        let nameserver = dns_server.to_string();
+        return nameserver;
+    }
+
     panic!("failed to locate default nameserver")
 }
 
