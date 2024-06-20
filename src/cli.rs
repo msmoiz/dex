@@ -168,7 +168,13 @@ struct Hosts;
 impl Hosts {
     /// Returns true if the hosts file contains the given host.
     fn contains(host: &str) -> bool {
-        let content = fs::read_to_string("/etc/hosts").unwrap();
+        #[cfg(unix)]
+        let path = "/etc/hosts";
+
+        #[cfg(windows)]
+        let path = "C:/Windows/System32/drivers/etc/hosts";
+
+        let content = fs::read_to_string(path).unwrap();
         Self::contains_inner(&content, host)
     }
 
