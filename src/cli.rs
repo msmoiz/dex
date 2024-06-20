@@ -213,7 +213,10 @@ fn find_default_nameserver() -> String {
 /// Finds the default nameserver for this operating system.
 #[cfg(windows)]
 fn find_default_nameserver() -> String {
-    use std::net::{IpAddr, UdpSocket};
+    use std::{
+        io,
+        net::{IpAddr, UdpSocket},
+    };
 
     // Get the IP of the network adapter that is used to access the internet
     // https://stackoverflow.com/questions/24661022/getting-ip-adress-associated-to-real-hardware-ethernet-controller-in-windows-c
@@ -226,7 +229,7 @@ fn find_default_nameserver() -> String {
 
     let ip = get_ipv4().ok();
 
-    let adapters = ipconfig::get_adapters()?;
+    let adapters = ipconfig::get_adapters().unwrap();
     let active_adapters = adapters.iter().filter(|a| {
         a.oper_status() == ipconfig::OperStatus::IfOperStatusUp && !a.gateways().is_empty()
     });
