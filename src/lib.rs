@@ -1520,7 +1520,7 @@ impl Display for ResponseCode {
         use ResponseCode::*;
 
         let str = match self {
-            Success => "succes",
+            Success => "success",
             FormatError => "format_error",
             ServerFailure => "server_failure",
             NameError => "nonexistent_domain",
