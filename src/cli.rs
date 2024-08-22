@@ -108,10 +108,8 @@ fn main() {
         nameserver,
     } = args.join(" ").parse().unwrap();
 
-    match Hosts::contains(&domain.to_string()) {
-        Ok(contains) if contains => eprintln!("warning: {} is present in hosts file", domain),
-        Err(e) => eprintln!("warning: unable to check against hosts file: {e:#}"),
-        _ => (),
+    if let Ok(true) = Hosts::contains(&domain.to_string()) {
+        eprintln!("warning: {} is present in hosts file", domain);
     }
 
     let mut request = Message::new();
