@@ -1,5 +1,6 @@
 use std::{convert::Infallible, fs, str::FromStr};
 
+use anyhow::Context;
 use clap::{ArgAction, Parser};
 use dex::{
     Message, Name, Question, QuestionClass, QuestionType, Record, ResponseCode, TcpTransport,
@@ -107,8 +108,10 @@ fn main() {
         nameserver,
     } = args.join(" ").parse().unwrap();
 
-    if Hosts::contains(&domain.to_string()) {
-        eprintln!("warning: {} is present in hosts file", domain);
+    match Hosts::contains(&domain.to_string()) {
+        Ok(contains) if contains => eprintln!("warning: {} is present in hosts file", domain),
+        Err(e) => eprintln!("warning: unable to check against hosts file: {e:#}"),
+        _ => (),
     }
 
     let mut request = Message::new();
@@ -167,15 +170,17 @@ struct Hosts;
 
 impl Hosts {
     /// Returns true if the hosts file contains the given host.
-    fn contains(host: &str) -> bool {
+    fn contains(host: &str) -> anyhow::Result<bool> {
         #[cfg(unix)]
         let path = "/etc/hosts";
 
         #[cfg(windows)]
         let path = "C:/Windows/System32/drivers/etc/hosts";
 
-        let content = fs::read_to_string(path).unwrap();
-        Self::contains_inner(&content, host)
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("failed to load hosts file at {path}"))?;
+
+        Ok(Self::contains_inner(&content, host))
     }
 
     fn contains_inner(input: &str, host: &str) -> bool {
