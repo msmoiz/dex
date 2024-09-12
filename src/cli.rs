@@ -1,6 +1,6 @@
-use std::{convert::Infallible, fs, str::FromStr};
+use std::{fs, str::FromStr};
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use clap::{ArgAction, Parser};
 use dex::{
     Message, Name, Question, QuestionClass, QuestionType, Record, ResponseCode, TcpTransport,
@@ -58,14 +58,14 @@ struct Args {
 }
 
 impl FromStr for Args {
-    type Err = Infallible;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut args = Self::default();
         for arg in s.split_whitespace() {
             if let Some(nameserver) = arg.strip_prefix("@") {
                 match args.nameserver.as_ref() {
-                    Some(_) => panic!("nameserver specified more than once"),
+                    Some(_) => bail!("nameserver specified more than once"),
                     None => args.nameserver = Some(nameserver.to_owned()),
                 }
                 continue;
@@ -73,7 +73,7 @@ impl FromStr for Args {
 
             if let Ok(q_type) = QuestionType::from_str(&arg) {
                 match args.q_type.as_ref() {
-                    Some(_) => panic!("type specified more than once"),
+                    Some(_) => bail!("type specified more than once"),
                     None => args.q_type = Some(q_type),
                 }
                 continue;
@@ -81,7 +81,7 @@ impl FromStr for Args {
 
             if let Ok(q_class) = QuestionClass::from_str(&arg) {
                 match args.q_class.as_ref() {
-                    Some(_) => panic!("class specified more than once"),
+                    Some(_) => bail!("class specified more than once"),
                     None => args.q_class = Some(q_class),
                 }
                 continue;
@@ -93,7 +93,7 @@ impl FromStr for Args {
     }
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let Cli {
         domain,
         udp,
@@ -106,7 +106,10 @@ fn main() {
         q_type,
         q_class,
         nameserver,
-    } = args.join(" ").parse().unwrap();
+    } = args
+        .join(" ")
+        .parse()
+        .context("failed to parse freeform arguments")?;
 
     if let Ok(true) = Hosts::contains(&domain.to_string()) {
         eprintln!("warning: {} is present in hosts file", domain);
@@ -161,6 +164,8 @@ fn main() {
         }
         c @ _ => eprintln!("status: {c}"),
     };
+
+    Ok(())
 }
 
 /// Represents the hosts file found on most operating systems.
