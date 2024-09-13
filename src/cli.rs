@@ -8,7 +8,7 @@ use dex::{
     UdpTransport,
 };
 use env_logger::fmt::Formatter;
-use log::warn;
+use log::{error, warn};
 use std::io::Write;
 
 #[derive(Parser, Debug)]
@@ -97,7 +97,7 @@ impl FromStr for Args {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
     init_logger();
 
     let Cli {
@@ -112,10 +112,17 @@ fn main() -> anyhow::Result<()> {
         q_type,
         q_class,
         nameserver,
-    } = args
+    } = match args
         .join(" ")
         .parse()
-        .context("failed to parse freeform arguments")?;
+        .context("failed to parse freeform arguments")
+    {
+        Ok(args) => args,
+        Err(e) => {
+            error!("{e:?}");
+            return;
+        }
+    };
 
     if let Ok(true) = Hosts::contains(&domain.to_string()) {
         warn!("{} is present in hosts file", domain);
@@ -170,8 +177,6 @@ fn main() -> anyhow::Result<()> {
         }
         c @ _ => eprintln!("status: {c}"),
     };
-
-    Ok(())
 }
 
 /// Initialize the logger.
