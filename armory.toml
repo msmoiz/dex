@@ -1,0 +1,7 @@
+[package]
+name = "dex"
+version = "1.0.0"
+
+[[targets]]
+triple = "x86_64_linux"
+path = "target/x86_64-unknown-linux-musl/release/dex"
