@@ -9,3 +9,7 @@ path = "target/x86_64-unknown-linux-musl/release/dex"
 [[targets]]
 triple = "x86_64_windows"
 path = "target/x86_64-pc-windows-msvc/release/dex.exe"
+
+[[targets]]
+triple = "aarch64_darwin"
+path = "target/aarch64-apple-darwin/release/dex"
