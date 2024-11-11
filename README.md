@@ -1,6 +1,6 @@
-# dex
+# Dex
 
-dex is an implementation of the Domain Name System (DNS). It includes an
+Dex is an implementation of the Domain Name System (DNS). It includes an
 authoritative nameserver and a command-line client (`dex`) that operates in a
 manner similar to `dig`.
 
