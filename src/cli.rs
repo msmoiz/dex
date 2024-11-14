@@ -50,15 +50,19 @@ struct Cli {
     /// Disable EDNS(0) for the request. (default: EDNS enabled)
     #[arg(long, action=ArgAction::SetFalse)]
     no_edns: bool,
-    /// The amount of information to include in the output. (default: standard)
+    /// Show only values for answer records. (default: show all information for
+    /// answer records)
+    #[arg(long, conflicts_with = "full")]
+    minimal: bool,
+    /// Show the full response. (default: show all information for answer records)
     #[arg(long)]
-    detail: Detail,
+    full: bool,
 }
 
 /// The amount of information to include in the output.
 #[derive(Debug, Clone, ValueEnum)]
 enum Detail {
-    /// Only show values for answer records.
+    /// Show only values for answer records.
     Minimal,
     /// Show all information for answer records.
     Standard,
@@ -122,7 +126,8 @@ fn main() -> ExitCode {
         tcp,
         args,
         no_edns: edns,
-        detail,
+        minimal,
+        full,
     } = Cli::parse();
 
     let Args {
@@ -135,6 +140,14 @@ fn main() -> ExitCode {
             error!("{e:?}");
             return ExitCode::from(1);
         }
+    };
+
+    let detail = if minimal {
+        Detail::Minimal
+    } else if full {
+        Detail::Full
+    } else {
+        Detail::Standard
     };
 
     if let Ok(true) = Hosts::contains(&domain.to_string()) {
