@@ -209,64 +209,73 @@ fn main() -> ExitCode {
         }
     };
 
-    match response.header.resp_code {
-        ResponseCode::Success => match (detail, format) {
-            (Detail::Minimal, Format::Text) => {
-                for record in response.answer_records {
-                    println!("{}", MinimalRecord::from(record))
-                }
+    match (detail, format, &response.header.resp_code) {
+        (Detail::Minimal, Format::Text, ResponseCode::Success) => {
+            for record in response.answer_records {
+                println!("{}", MinimalRecord::from(record))
             }
-            (Detail::Minimal, Format::Json) => {
-                let min_answer_records = response
-                    .answer_records
-                    .into_iter()
-                    .map(|record| MinimalRecord::from(record))
-                    .collect::<Vec<_>>();
+        }
 
-                println!("{}", serde_json::to_string(&min_answer_records).unwrap());
-            }
-            (Detail::Standard, Format::Text) => {
-                for record in &response.answer_records {
-                    println!("{record}")
-                }
-            }
-            (Detail::Standard, Format::Json) => {
-                println!(
-                    "{}",
-                    serde_json::to_string(&response.answer_records).unwrap()
-                );
-            }
-            (Detail::Full, Format::Text) => {
-                println!("{}", response.header);
+        (Detail::Minimal, Format::Json, ResponseCode::Success) => {
+            let min_answer_records = response
+                .answer_records
+                .into_iter()
+                .map(|record| MinimalRecord::from(record))
+                .collect::<Vec<_>>();
 
-                for question in &response.questions {
-                    println!(
-                        "{} {} {} ?",
-                        question.name, question.q_type, question.q_class
-                    );
-                }
+            println!("{}", serde_json::to_string(&min_answer_records).unwrap());
+        }
 
-                for record in &response.answer_records {
-                    println!("{record}")
-                }
-
-                for record in &response.authority_records {
-                    println!("{record} !")
-                }
-
-                for record in &response.additional_records {
-                    println!("{record} +")
-                }
-            }
-            (Detail::Full, Format::Json) => {
-                println!("{}", serde_json::to_string(&response).unwrap());
-            }
-        },
-        c @ _ => {
-            eprintln!("status: {c}");
+        (Detail::Minimal, _, status @ _) => {
+            eprintln!("status: {status}");
             return ExitCode::from(1);
         }
-    };
+
+        (Detail::Standard, Format::Text, ResponseCode::Success) => {
+            for record in &response.answer_records {
+                println!("{record}")
+            }
+        }
+
+        (Detail::Standard, Format::Json, ResponseCode::Success) => {
+            println!(
+                "{}",
+                serde_json::to_string(&response.answer_records).unwrap()
+            );
+        }
+
+        (Detail::Standard, _, status @ _) => {
+            eprintln!("status: {status}");
+            return ExitCode::from(1);
+        }
+
+        (Detail::Full, Format::Text, _) => {
+            println!("{}", response.header);
+
+            for question in &response.questions {
+                println!(
+                    "{} {} {} ?",
+                    question.name, question.q_type, question.q_class
+                );
+            }
+
+            for record in &response.answer_records {
+                println!("{record}")
+            }
+
+            for record in &response.authority_records {
+                println!("{record} !")
+            }
+
+            for record in &response.additional_records {
+                println!("{record} +")
+            }
+        }
+
+        (Detail::Full, Format::Json, _) => {
+            println!("{}", serde_json::to_string(&response).unwrap());
+        }
+    }
 
     ExitCode::default()
 }
