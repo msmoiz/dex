@@ -1682,6 +1682,8 @@ pub enum QuestionType {
     MX,
     /// Text strings.
     TXT,
+    /// An IPv6 host address.
+    AAAA,
     /// A request for a transfer of an entire zone.
     AXFR,
     /// A request for mailbox-related records (MB, MG or MR).
@@ -1720,6 +1722,7 @@ impl From<u16> for QuestionType {
             14 => MINFO,
             15 => MX,
             16 => TXT,
+            28 => AAAA,
             252 => AXFR,
             253 => MAILB,
             254 => MAILA,
@@ -1750,6 +1753,7 @@ impl From<QuestionType> for u16 {
             MINFO => 14,
             MX => 15,
             TXT => 16,
+            AAAA => 28,
             AXFR => 252,
             MAILB => 253,
             MAILA => 254,
@@ -1781,6 +1785,7 @@ impl FromStr for QuestionType {
             "MINFO" => MINFO,
             "MX" => MX,
             "TXT" => TXT,
+            "AAAA" => AAAA,
             "AXFR" => AXFR,
             "MAILB" => MAILB,
             "MAILA" => MAILA,
