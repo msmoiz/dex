@@ -1,6 +1,6 @@
 mod logger;
 
-use std::{fs, str::FromStr};
+use std::{fs, process::ExitCode, str::FromStr};
 
 use anyhow::{bail, Context};
 use clap::{ArgAction, Parser};
@@ -97,7 +97,7 @@ impl TryFrom<Vec<String>> for Args {
     }
 }
 
-fn main() {
+fn main() -> ExitCode {
     init_logger();
 
     let Cli {
@@ -116,7 +116,7 @@ fn main() {
         Ok(args) => args,
         Err(e) => {
             error!("{e:?}");
-            return;
+            return ExitCode::from(1);
         }
     };
 
@@ -171,8 +171,13 @@ fn main() {
                 println!("{record}")
             }
         }
-        c @ _ => eprintln!("status: {c}"),
+        c @ _ => {
+            eprintln!("status: {c}");
+            return ExitCode::from(1);
+        }
     };
+
+    ExitCode::default()
 }
 
 /// Represents the hosts file found on most operating systems.
