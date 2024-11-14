@@ -62,6 +62,8 @@ enum Detail {
     Minimal,
     /// Show all information for answer records.
     Standard,
+    /// Show the full response.
+    Full,
 }
 
 /// Freeform arguments to modify the request.
@@ -190,6 +192,28 @@ fn main() -> ExitCode {
             Detail::Standard => {
                 for record in &response.answer_records {
                     println!("{record}")
+                }
+            }
+            Detail::Full => {
+                println!("{}", response.header);
+
+                for question in &response.questions {
+                    println!(
+                        "{} {} {} ?",
+                        question.name, question.q_type, question.q_class
+                    );
+                }
+
+                for record in &response.answer_records {
+                    println!("{record}")
+                }
+
+                for record in &response.authority_records {
+                    println!("{record} !")
+                }
+
+                for record in &response.additional_records {
+                    println!("{record} +")
                 }
             }
         },

@@ -1466,6 +1466,18 @@ impl From<OperationCode> for u8 {
     }
 }
 
+impl Display for OperationCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use OperationCode::*;
+
+        match self {
+            Query => write!(f, "QUERY"),
+            InverseQuery => write!(f, "INVERSE"),
+            Status => write!(f, "STATUS"),
+        }
+    }
+}
+
 /// A DNS response code.
 #[derive(Debug, Clone)]
 pub enum ResponseCode {
@@ -1647,6 +1659,23 @@ impl Header {
     }
 }
 
+impl Display for Header {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "ID: {}", self.id)?;
+        writeln!(f, "Is response: {}", self.is_response)?;
+        writeln!(f, "Operation code: {}", self.op_code)?;
+        writeln!(f, "Is authority: {}", self.is_authority)?;
+        writeln!(f, "Is truncated: {}", self.is_truncated)?;
+        writeln!(f, "Recursion desired: {}", self.recursion_desired)?;
+        writeln!(f, "Recursion available: {}", self.recursion_available)?;
+        writeln!(f, "Response code: {}", self.resp_code)?;
+        writeln!(f, "Questions: {}", self.question_count)?;
+        writeln!(f, "Answers: {}", self.answer_count)?;
+        writeln!(f, "Authorities: {}", self.authority_count)?;
+        writeln!(f, "Additional records: {}", self.additional_count)
+    }
+}
+
 /// The type of a DNS question.
 #[derive(Debug, Clone)]
 pub enum QuestionType {
@@ -1797,6 +1826,38 @@ impl FromStr for QuestionType {
     }
 }
 
+impl Display for QuestionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use QuestionType::*;
+
+        let text = match self {
+            A => "A",
+            NS => "NS",
+            MD => "MD",
+            MF => "MF",
+            CNAME => "CNAME",
+            SOA => "SOA",
+            MB => "MB",
+            MG => "MG",
+            MR => "MR",
+            NULL => "NULL",
+            WKS => "WKS",
+            PTR => "PTR",
+            HINFO => "HINFO",
+            MINFO => "MINFO",
+            MX => "MX",
+            TXT => "TXT",
+            AAAA => "AAAA",
+            AXFR => "AXFR",
+            MAILB => "MAILB",
+            MAILA => "MAILA",
+            ALL => "ALL",
+        };
+
+        write!(f, "{text}")
+    }
+}
+
 /// The class of a DNS question.
 #[derive(Debug, Clone)]
 pub enum QuestionClass {
@@ -1857,6 +1918,18 @@ impl FromStr for QuestionClass {
         };
 
         Ok(value)
+    }
+}
+
+impl Display for QuestionClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QuestionClass::In => write!(f, "IN"),
+            QuestionClass::Cs => write!(f, "CS"),
+            QuestionClass::Ch => write!(f, "CH"),
+            QuestionClass::Hs => write!(f, "HS"),
+            QuestionClass::Any => write!(f, "ANY"),
+        }
     }
 }
 
