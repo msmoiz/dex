@@ -1484,9 +1484,9 @@ impl Display for OperationCode {
         use OperationCode::*;
 
         match self {
-            Query => write!(f, "QUERY"),
-            InverseQuery => write!(f, "INVERSE"),
-            Status => write!(f, "STATUS"),
+            Query => write!(f, "query"),
+            InverseQuery => write!(f, "inverse"),
+            Status => write!(f, "status"),
         }
     }
 }
