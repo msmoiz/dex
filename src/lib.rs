@@ -14,7 +14,7 @@ use std::{
 use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde::{de::Visitor, Deserialize};
+use serde::{de::Visitor, Deserialize, Serialize};
 
 /// A DNS label.
 ///
@@ -260,6 +260,15 @@ impl<'de> Deserialize<'de> for Name {
     }
 }
 
+impl Serialize for Name {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 /// Iterator over the suffixes of a name.
 struct Suffixes<'a> {
     name: &'a Name,
@@ -321,7 +330,7 @@ impl<'a> Iterator for Ancestors<'a> {
 }
 
 /// A DNS resource record.
-#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "UPPERCASE")]
 pub enum Record {
     /// IPv4 address record.
@@ -1260,7 +1269,7 @@ impl Display for Record {
 }
 
 /// DNS record class.
-#[derive(Default, Debug, PartialEq, Eq, Clone, Deserialize)]
+#[derive(Default, Debug, PartialEq, Eq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Class {
     /// Internet.
@@ -1364,7 +1373,7 @@ impl Zone {
 }
 
 /// A DNS message.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct Message {
     pub header: Header,
     pub questions: Vec<Question>,
@@ -1431,7 +1440,7 @@ impl Message {
 }
 
 /// A DNS operation code.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum OperationCode {
     /// A standard query.
     Query,
@@ -1479,7 +1488,7 @@ impl Display for OperationCode {
 }
 
 /// A DNS response code.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum ResponseCode {
     /// No error condition.
     Success,
@@ -1545,7 +1554,7 @@ impl Display for ResponseCode {
 }
 
 /// Message header.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Header {
     pub id: u16,
     pub is_response: bool,
@@ -1677,7 +1686,7 @@ impl Display for Header {
 }
 
 /// The type of a DNS question.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum QuestionType {
     /// A host address.
     A,
@@ -1859,7 +1868,7 @@ impl Display for QuestionType {
 }
 
 /// The class of a DNS question.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum QuestionClass {
     /// Internet.
     In,
@@ -1934,7 +1943,7 @@ impl Display for QuestionClass {
 }
 
 /// A DNS question.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Question {
     pub name: Name,
     pub q_type: QuestionType,

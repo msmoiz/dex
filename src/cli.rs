@@ -57,6 +57,9 @@ struct Cli {
     /// Show the full response. (default: show all information for answer records)
     #[arg(long)]
     full: bool,
+    /// Print output in JSON format. (default: unstructured text)
+    #[arg(long)]
+    json: bool,
 }
 
 /// The amount of information to include in the output.
@@ -68,6 +71,14 @@ enum Detail {
     Standard,
     /// Show the full response.
     Full,
+}
+
+/// The output format.
+enum Format {
+    /// Output as unstructured text.
+    Text,
+    /// Output as JSON.
+    Json,
 }
 
 /// Freeform arguments to modify the request.
@@ -128,6 +139,7 @@ fn main() -> ExitCode {
         no_edns: edns,
         minimal,
         full,
+        json,
     } = Cli::parse();
 
     let Args {
@@ -149,6 +161,8 @@ fn main() -> ExitCode {
     } else {
         Detail::Standard
     };
+
+    let format = if json { Format::Json } else { Format::Text };
 
     if let Ok(true) = Hosts::contains(&domain.to_string()) {
         warn!("{} is present in hosts file", domain);
@@ -196,18 +210,33 @@ fn main() -> ExitCode {
     };
 
     match response.header.resp_code {
-        ResponseCode::Success => match detail {
-            Detail::Minimal => {
+        ResponseCode::Success => match (detail, format) {
+            (Detail::Minimal, Format::Text) => {
                 for record in response.answer_records {
                     println!("{}", MinimalRecord::from(record))
                 }
             }
-            Detail::Standard => {
+            (Detail::Minimal, Format::Json) => {
+                let min_answer_records = response
+                    .answer_records
+                    .into_iter()
+                    .map(|record| MinimalRecord::from(record))
+                    .collect::<Vec<_>>();
+
+                println!("{}", serde_json::to_string(&min_answer_records).unwrap());
+            }
+            (Detail::Standard, Format::Text) => {
                 for record in &response.answer_records {
                     println!("{record}")
                 }
             }
-            Detail::Full => {
+            (Detail::Standard, Format::Json) => {
+                println!(
+                    "{}",
+                    serde_json::to_string(&response.answer_records).unwrap()
+                );
+            }
+            (Detail::Full, Format::Text) => {
                 println!("{}", response.header);
 
                 for question in &response.questions {
@@ -228,6 +257,9 @@ fn main() -> ExitCode {
                 for record in &response.additional_records {
                     println!("{record} +")
                 }
+            }
+            (Detail::Full, Format::Json) => {
+                println!("{}", serde_json::to_string(&response).unwrap());
             }
         },
         c @ _ => {

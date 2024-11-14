@@ -4,13 +4,13 @@ use std::{
 };
 
 use dex::{Name, Record};
-use serde::Deserialize;
+use serde::Serialize;
 
 /// A minimal representation of a record.
 ///
 /// It only contains the values for the record.
-#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "UPPERCASE")]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize)]
+#[serde(untagged)]
 pub enum MinimalRecord {
     /// IPv4 address record.
     A { addr: Ipv4Addr },
