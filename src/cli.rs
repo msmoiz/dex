@@ -253,10 +253,7 @@ fn main() -> ExitCode {
             println!("{}", response.header);
 
             for question in &response.questions {
-                println!(
-                    "{} {} {} ?",
-                    question.name, question.q_type, question.q_class
-                );
+                println!("{question} ?");
             }
 
             for record in &response.answer_records {

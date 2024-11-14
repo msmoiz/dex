@@ -1976,6 +1976,12 @@ impl Question {
     }
 }
 
+impl Display for Question {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {} {}", self.name, self.q_class, self.q_type)
+    }
+}
+
 /// A byte stream.
 pub struct Bytes {
     buf: Vec<u8>,
