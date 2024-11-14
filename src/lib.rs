@@ -206,6 +206,10 @@ impl FromStr for Name {
 
 impl Display for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.labels.len() == 1 {
+            return write!(f, ".");
+        }
+
         for label in &self.labels {
             write!(f, "{}", label.0)?;
             if label.0 != "" {
