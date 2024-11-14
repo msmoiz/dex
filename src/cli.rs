@@ -61,12 +61,12 @@ struct Args {
     nameserver: Option<String>,
 }
 
-impl FromStr for Args {
-    type Err = anyhow::Error;
+impl TryFrom<Vec<String>> for Args {
+    type Error = anyhow::Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
         let mut args = Self::default();
-        for arg in s.split_whitespace() {
+        for arg in value {
             if let Some(nameserver) = arg.strip_prefix("@") {
                 match args.nameserver.as_ref() {
                     Some(_) => bail!("nameserver specified more than once"),
@@ -112,11 +112,7 @@ fn main() {
         q_type,
         q_class,
         nameserver,
-    } = match args
-        .join(" ")
-        .parse()
-        .context("failed to parse freeform arguments")
-    {
+    } = match Args::try_from(args).context("failed to parse freeform arguments") {
         Ok(args) => args,
         Err(e) => {
             error!("{e:?}");
