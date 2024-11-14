@@ -1,15 +1,17 @@
 mod logger;
+mod minimal;
 
 use std::{fs, process::ExitCode, str::FromStr};
 
 use anyhow::{bail, Context};
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, ValueEnum};
 use dex::{
     Message, Name, Question, QuestionClass, QuestionType, Record, ResponseCode, TcpTransport,
     UdpTransport,
 };
 use log::{error, warn};
 use logger::init_logger;
+use minimal::MinimalRecord;
 
 #[derive(Parser, Debug)]
 #[command(version, about, max_term_width = 80)]
@@ -48,6 +50,18 @@ struct Cli {
     /// Disable EDNS(0) for the request. (default: EDNS enabled)
     #[arg(long, action=ArgAction::SetFalse)]
     no_edns: bool,
+    /// The amount of information to include in the output. (default: standard)
+    #[arg(long)]
+    detail: Detail,
+}
+
+/// The amount of information to include in the output.
+#[derive(Debug, Clone, ValueEnum)]
+enum Detail {
+    /// Only show values for answer records.
+    Minimal,
+    /// Show all information for answer records.
+    Standard,
 }
 
 /// Freeform arguments to modify the request.
@@ -106,6 +120,7 @@ fn main() -> ExitCode {
         tcp,
         args,
         no_edns: edns,
+        detail,
     } = Cli::parse();
 
     let Args {
@@ -166,11 +181,18 @@ fn main() -> ExitCode {
     };
 
     match response.header.resp_code {
-        ResponseCode::Success => {
-            for record in &response.answer_records {
-                println!("{record}")
+        ResponseCode::Success => match detail {
+            Detail::Minimal => {
+                for record in response.answer_records {
+                    println!("{}", MinimalRecord::from(record))
+                }
             }
-        }
+            Detail::Standard => {
+                for record in &response.answer_records {
+                    println!("{record}")
+                }
+            }
+        },
         c @ _ => {
             eprintln!("status: {c}");
             return ExitCode::from(1);
