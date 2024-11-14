@@ -91,7 +91,7 @@ impl TryFrom<Vec<String>> for Args {
                 continue;
             }
 
-            panic!("unrecognized argument: {arg}");
+            bail!("unrecognized argument: {arg}");
         }
         Ok(args)
     }
