@@ -106,7 +106,7 @@ impl TryFrom<Vec<String>> for Args {
                 continue;
             }
 
-            if let Ok(q_type) = QuestionType::from_str(&arg) {
+            if let Ok(q_type) = QuestionType::from_str(&arg.to_ascii_uppercase()) {
                 match args.q_type.as_ref() {
                     Some(_) => bail!("type specified more than once"),
                     None => args.q_type = Some(q_type),
