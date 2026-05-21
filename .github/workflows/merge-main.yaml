@@ -1,0 +1,70 @@
+name: Merge to main
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - '*'
+
+jobs:
+  build-test-publish:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      ARMORY_PASSWORD: ${{ secrets.ARMORY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rust-cache"
+
+      - name: Install just
+        uses: extractions/setup-just@v3
+
+      - name: Install Rust target (Linux)
+        if: runner.os == 'Linux'
+        run: rustup target add x86_64-unknown-linux-musl
+
+      - name: Install musl tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: just build
+
+      - name: Test
+        run: just test
+
+      - name: Check for tag
+        id: check-tag
+        shell: bash
+        run: |
+          if git tag --points-at HEAD | grep -q .; then
+            echo "has_tag=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_tag=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Armory (Unix)
+        if: steps.check-tag.outputs.has_tag == 'true' && runner.os != 'Windows'
+        run: |
+          curl https://armory.msmoiz.com/install.sh | sh
+          echo "$HOME/.armory/bin" >> $GITHUB_PATH
+
+      - name: Install Armory (Windows)
+        if: steps.check-tag.outputs.has_tag == 'true' && runner.os == 'Windows'
+        run: |
+          Invoke-RestMethod https://armory.msmoiz.com/install.ps1 | Invoke-Expression
+          "$env:USERPROFILE\.armory\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Publish
+        if: steps.check-tag.outputs.has_tag == 'true'
+        run: just publish
