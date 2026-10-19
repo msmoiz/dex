@@ -128,7 +128,7 @@ impl TryFrom<Vec<String>> for Args {
     }
 }
 
-fn main() -> ExitCode {
+fn main() -> anyhow::Result<ExitCode> {
     init_logger();
 
     let Cli {
@@ -150,7 +150,7 @@ fn main() -> ExitCode {
         Ok(args) => args,
         Err(e) => {
             error!("{e:?}");
-            return ExitCode::from(1);
+            return Ok(ExitCode::from(1));
         }
     };
 
@@ -195,14 +195,14 @@ fn main() -> ExitCode {
 
     let response = {
         if tcp {
-            TcpTransport::new(nameserver).send(request)
+            TcpTransport::new(nameserver).send(request)?
         } else if udp {
-            UdpTransport::new(nameserver, max_response_size).send(request)
+            UdpTransport::new(nameserver, max_response_size).send(request)?
         } else {
             let response =
-                UdpTransport::new(nameserver.clone(), max_response_size).send(request.clone());
+                UdpTransport::new(nameserver.clone(), max_response_size).send(request.clone())?;
             if response.header.is_truncated {
-                TcpTransport::new(nameserver).send(request)
+                TcpTransport::new(nameserver).send(request)?
             } else {
                 response
             }
@@ -228,7 +228,7 @@ fn main() -> ExitCode {
 
         (Detail::Minimal, _, status @ _) => {
             eprintln!("status: {status}");
-            return ExitCode::from(1);
+            return Ok(ExitCode::from(1));
         }
 
         (Detail::Standard, Format::Text, ResponseCode::Success) => {
@@ -246,7 +246,7 @@ fn main() -> ExitCode {
 
         (Detail::Standard, _, status @ _) => {
             eprintln!("status: {status}");
-            return ExitCode::from(1);
+            return Ok(ExitCode::from(1));
         }
 
         (Detail::Full, Format::Text, _) => {
@@ -274,7 +274,7 @@ fn main() -> ExitCode {
         }
     }
 
-    ExitCode::default()
+    Ok(ExitCode::default())
 }
 
 /// Represents the hosts file found on most operating systems.
