@@ -164,7 +164,7 @@ impl Name {
     ///
     /// Suffixes are returned in descending order based on length. The last
     /// element returned is the root name.
-    fn suffixes(&self) -> Suffixes {
+    fn suffixes(&self) -> Suffixes<'_> {
         Suffixes::new(self)
     }
 
@@ -172,7 +172,7 @@ impl Name {
     ///
     /// Ancestors are returned in ascending order based on length. The last
     /// element returned is the full name.
-    pub fn ancestors(&self) -> Ancestors {
+    pub fn ancestors(&self) -> Ancestors<'_> {
         Ancestors::new(self)
     }
 
@@ -1356,7 +1356,7 @@ impl Zone {
     /// # Example
     ///
     /// The following example defines a zone with one address record.
-    ///  
+    ///
     /// ```toml
     /// [[records]]
     /// name = "example.com."
