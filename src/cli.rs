@@ -13,6 +13,7 @@ use log::{error, warn};
 use logger::init_logger;
 use minimal::MinimalRecord;
 
+/// A DNS client.
 #[derive(Parser, Debug)]
 #[command(version, about, max_term_width = 80)]
 struct Cli {
