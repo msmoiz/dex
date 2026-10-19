@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Context;
 
-use crate::{Bytes, Message};
+use crate::{addr::resolve_nameserver, Bytes, Message};
 
 /// Message transport over TCP.
 pub struct TcpTransport {
@@ -21,11 +21,8 @@ impl TcpTransport {
     /// Sends a DNS request.
     pub fn send(&self, request: Message) -> anyhow::Result<Message> {
         let err = || format!("failed to connect to nameserver: {}", self.nameserver);
-        let mut socket = if self.nameserver.contains(":") {
-            TcpStream::connect(&self.nameserver).with_context(err)?
-        } else {
-            TcpStream::connect((self.nameserver.as_str(), 53)).with_context(err)?
-        };
+        let addr = resolve_nameserver(&self.nameserver).with_context(err)?;
+        let mut socket = TcpStream::connect(addr).with_context(err)?;
 
         let mut request_bytes = Bytes::new();
         request.to_bytes(&mut request_bytes);

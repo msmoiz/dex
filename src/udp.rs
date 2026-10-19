@@ -1,6 +1,9 @@
 use anyhow::Context;
 
-use crate::{Bytes, Message};
+use crate::{
+    addr::{resolve_nameserver, unspecified_for},
+    Bytes, Message,
+};
 
 /// Message transport over UDP.
 pub struct UdpTransport {
@@ -19,21 +22,16 @@ impl UdpTransport {
 
     /// Sends a DNS request.
     pub fn send(&self, request: Message) -> anyhow::Result<Message> {
-        let socket = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
+        let err = || format!("failed to send packet to nameserver: {}", self.nameserver);
+        let addr = resolve_nameserver(&self.nameserver).with_context(err)?;
+        let socket = std::net::UdpSocket::bind(unspecified_for(&addr)).unwrap();
 
         let mut request_bytes = Bytes::new();
         request.to_bytes(&mut request_bytes);
 
-        let err = || format!("failed to send packet to nameserver: {}", self.nameserver);
-        if self.nameserver.contains(":") {
-            socket
-                .send_to(request_bytes.used(), &self.nameserver)
-                .with_context(err)?;
-        } else {
-            socket
-                .send_to(request_bytes.used(), (self.nameserver.as_str(), 53))
-                .with_context(err)?;
-        }
+        socket
+            .send_to(request_bytes.used(), addr)
+            .with_context(err)?;
 
         let mut response_buf = vec![0; self.max_response_size as usize];
         let (_, _) = socket.recv_from(&mut response_buf).unwrap();

@@ -1,3 +1,4 @@
+mod addr;
 mod tcp;
 mod udp;
 pub use tcp::TcpTransport;
